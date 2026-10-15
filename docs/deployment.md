@@ -26,7 +26,7 @@ The guide also includes a reference section describing the project structure.
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
 
-For local end-to-end testing using Kind, see [docs/manual-testing-kind.md](docs/manual-testing-kind.md) (full Guest ↔ Host flow) and [docs/manual-callbacks-testing-kind.md](docs/manual-callbacks-testing-kind.md) (Host → Guest callback flow).
+For local end-to-end testing using Kind, see [Manual Federation Testing with Kind](testing/manual-testing-kind.md) (full Guest ↔ Host flow) and [Manual Callback Testing with Kind](testing/manual-callbacks-testing-kind.md) (Host → Guest callback flow).
 
 ### Configuration: platform ARM64 or platform AMD64
 This code is designed to run on both ARM64 and AMD64 platforms, but to enable this, some changes need to be made to the following files: values.yaml in (dist/chart) and the Makefile.
