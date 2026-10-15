@@ -50,18 +50,23 @@ As a result, the current implementation provides client identification through `
 
 ## Callback Security
 
-Callbacks use information stored in the federation resource.
+Callbacks communicate status and lifecycle updates between federation partners. The callback destination depends on the resource and operation.
 
-The `Federation` resource contains:
+The Federation resource stores federation communication information in the following fields:
 
-* `Partner.CallbackCredentials.ClientId`
-* `Partner.CallbackCredentials.TokenUrl`
-* `Partner.StatusLink`
+- `spec.federationData.clientId`
+- `spec.federationData.clientSecret`
+- `spec.federationData.restOptions.tokenUrl`
+- `spec.federationData.restOptions.partnerStatusLink`
 
-When sending an application callback, the implementation uses the configured partner status link and callback client ID.
+The callback destinations are not all taken from the Federation resource:
 
-The same mechanism is used for File, Artefact and ApplicationInstance callbacks.
-The Guest API provides callback endpoints that process the received notifications and update the corresponding local resource.
+- **Image callbacks** use the `imageNotifLink` stored on the Image resource.
+- **Artefact callbacks** use the `artefactNotifLink` stored on the Artefact resource.
+- **Application onboarding callbacks** use `appInfo.appStatusCallbackLink` stored on the ApplicationOnboarding resource.
+- **Application deployment callbacks** use `partnerStatusLink` from the Federation resource.
+
+The Guest API provides callback endpoints that process received notifications and update the corresponding local resources.
 
 The current implementation does not define additional callback authentication or authorisation checks.
 
@@ -77,27 +82,35 @@ For example, the Federation controller declares permissions for:
 * `federations/status`
 * `federations/finalizers`
 
-The ApplicationInstance controller declares corresponding permissions for:
+The ApplicationDeployment controller declares corresponding permissions for:
 
-* `applicationinstances`
-* `applicationinstances/status`
-* `applicationinstances/finalizers`
+* `applicationdeployments`
+* `applicationdeployments/status`
+* `applicationdeployments/finalizers`
 
 The controllers use the Kubernetes client to retrieve resources and update their status.
 
-Federation resources also use Kubernetes labels to associate resources with a Federation Context and identify whether a resource belongs to the Guest or Host side.
+Federation resources use resource fields to associate resources with a federation context and identify whether a resource belongs to the Guest or Host side.
 
-The current implementation defines labels for:
+The operator sets the following Kubernetes label:
 
 ```text
-opg.ewbi.nby.one/federation-context-id
-opg.ewbi.nby.one/federation-relation
-opg.ewbi.nby.one/id
+opg.ewbi.katalis.com/id
 ```
 
-The federation relationship is represented as `guest` or `host`.
+The federation relationship is stored in `spec.relationType` for child resources and `spec.federationData.relationType` for a `Federation` resource. The federation context ID is stored in `spec.federationContextId` for child resources and `status.federationContextId` for a `Federation` resource.
 
-These labels are used when locating the Federation associated with a resource.
+The relationship is represented as `GUEST` or `HOST`. These fields are used when locating the Federation associated with a resource.
+
+### Admission Policies
+
+The platform defines admission policies that protect federation resource consistency and prevent certain operations.
+
+A `ValidatingAdmissionPolicy` validates create, update and delete operations on `Image`, `Artefact`, `ApplicationOnboarding` and `ApplicationDeployment` resources. It checks that the resource's `federationContextId` belongs to a known `Federation` on the same side of the relationship (`HOST` or `GUEST`).
+
+A separate admission policy prevents direct deletion of Host-side resources.
+
+These policies help enforce federation resource consistency and protect Host-side resources against direct deletion. They complement the controller and RBAC mechanisms described above.
 
 ---
 
@@ -113,7 +126,7 @@ An `Artefact` can contain:
 * Compute resource requirements
 * Exposed interfaces
 
-An `ApplicationInstance` contains information including:
+An `ApplicationDeployment` contains information including:
 
 * Application ID
 * Application version
@@ -163,7 +176,11 @@ The API reads `X-Client-ID`, but the current `ValidateAuthHeaders` handler does 
 
 ### Transport Security
 
-The current implementation does not define how transport security is configured for communication between operators.
+The EWBI API server listens over plain HTTP; HTTPS is not configured by the API server in the current implementation.
+
+For outbound connections to partner URLs using HTTPS, the Operator verifies server certificates unless the `--opg-insecure-skip-verify` option is enabled.
+
+Consequently, outbound HTTPS connections support certificate verification by default, but the API server does not itself provide HTTPS transport protection. The deployment environment must account for this when securing communication between operators.
 
 ### Credential Protection
 
@@ -187,3 +204,11 @@ The current implementation does not define the security controls used by the loc
 
 The current implementation associates operator communication with federation-specific client and callback information, identifies API clients using `X-Client-ID`, and uses Kubernetes RBAC for access to federation resources.
 The implementation does not currently define additional mechanisms for authentication validation, transport security, credential protection, callback authentication, application and artefact verification, or workload isolation.
+
+## Related Documentation
+
+* [Quick Start Guide](Quick-start-introduction.md) — Introduction to the platform and its key concepts.
+* [Architecture](architecture.md) — Describes the high-level architecture of the EWBI Federation Platform
+* [Core Components](components.md) — Detailed responsibilities and implementation of the platform components.
+* [Federation Model and Workflows](federation.md) — Detailed federation behaviour and resource workflows.
+* [Deployment](deployment.md) — Setup and deployment of the federation manager
