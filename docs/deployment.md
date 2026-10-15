@@ -17,16 +17,16 @@ The guide covers:
 
 The guide also includes a reference section describing the project structure.
 
-# Getting Started
+## Getting Started
 
-## Prerequisites
+### Prerequisites
 
 - go version v1.22.0+
 - docker version 17.03+.
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
 
-For local end-to-end testing using Kind, see [manual-testing-kind.md](manual-testing-kind.md) (full Guest ↔ Host flow) and [manual-callbacks-testing-kind.md](manual-callbacks-testing-kind.md) (Host → Guest callback flow).
+For local end-to-end testing using Kind, see [docs/manual-testing-kind.md](docs/manual-testing-kind.md) (full Guest ↔ Host flow) and [docs/manual-callbacks-testing-kind.md](docs/manual-callbacks-testing-kind.md) (Host → Guest callback flow).
 
 ### Configuration: platform ARM64 or platform AMD64
 This code is designed to run on both ARM64 and AMD64 platforms, but to enable this, some changes need to be made to the following files: values.yaml in (dist/chart) and the Makefile.
@@ -98,12 +98,16 @@ Install operator in host namespace, set API nodeport and set CRD to true to also
       --docker-password= $accessToken
   ```
 7. In the end exec this command (in the **project root folder** via terminal)
-  ```bash
-  helm install federation-manager dist/chart -n federation \
-  --set federation.services.federation.nodePort=30080 \
-  --set crd.enable=true
-  ```
-After this command the OPG-EWBI-CONTROLLER and OPG-EWBI-API, if everything goes well, they will be available.
+
+    **NOTE:** Before executing this command, edit `dist/chart/templates/rbac/host_delete_protection_policy.yaml` at `spec.matchConditions.expression`, including the correct Guest service account name. Otherwise, you won't be able to delete resources.
+
+    ```bash
+    helm install federation-manager dist/chart -n federation \
+    --set federation.services.federation.nodePort=30080 \
+    --set crd.enable=true
+    ```
+
+    After this command the OPG-EWBI-CONTROLLER and OPG-EWBI-API, if everything goes well, they will be available.
 By running the command kubectl get pods -A, you should see two pods running in the federation namespace with names like nearbyone-federation-api-XXX and opg-ewbi-operator-controller-manager-XXX.
 
 Use the following commands only if we you want to push the latest version of the controller and the api in github pacakge
@@ -150,8 +154,11 @@ helm install federationguest dist/chart -n katalis-dev-guest \
 ```
 **Choose the names you prefer for namespaces and helm; those listed here are provided as examples.**
 
-
 ### Test:
+
+**Note:** You can launch the end-to-end federation test from GitHub Actions locally using [act](https://github.com/nektos/act). Make sure to stop any local Kind cluster before starting the test.
+
+**Note:** You can launch the e2e federation test from github actions locally using [act](https://github.com/nektos/act). Make sure to stop any local kind cluster before starting the test.
 
 Create Client ID in identity provider and store in a federation on the host. This is not yet the establishment of the federation: This is done to link the federation to the clientID.
 
