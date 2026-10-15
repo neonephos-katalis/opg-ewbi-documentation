@@ -50,7 +50,7 @@ A typical application deployment progresses through three broad stages:
 
 The following diagram provides a simplified end-to-end view of these stages and the operations involved.
 
-![End-to-end federation workflow](asset/asset-architecture/federation-workflow.png)
+![End-to-end federation workflow](assets/asset-architecture/federation-workflow.png)
 
 ## Federation Registration
 

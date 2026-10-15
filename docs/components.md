@@ -84,7 +84,7 @@ The controller and API interactions described below explain the EWBI API-based i
 
 The following diagram shows the main building blocks of the Federation Manager and their relationships.
 
-![Federation Manager architecture](asset/asset-architecture/federation-manager-architecture.png)
+![Federation Manager architecture](assets/asset-architecture/federation-manager-architecture.png)
 
 ---
 
@@ -401,7 +401,7 @@ The Federation Manager operates within the environment of each participating ope
 
 The following diagram shows the main operator-to-operator communication paths and the relationship between the federation components on each side.
 
-![Operator-to-operator communication](asset/asset-architecture/operator-to-operator.png)
+![Operator-to-operator communication](assets/asset-architecture/operator-to-operator.png)
 
 Within each operator environment, the EWBI API, EWBI Custom Resources and Kubernetes controllers provide the local federation implementation. The federation components communicate with the corresponding components of the partner operator to support federated operations.
 
