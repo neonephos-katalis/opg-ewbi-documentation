@@ -35,8 +35,8 @@ The documentation covers the platform architecture, implementation, federation b
 - **[Federation Model and Workflows](docs/federation.md)** — federation behaviour, resource relationships and operational workflows.
 - **[Security](docs/security.md)** — security mechanisms and trust boundaries.
 - **[Deployment Guide](docs/deployment.md)** — prerequisites and instructions for building and deploying the Federation Manager.
-- **[Manual Federation Testing with Kind](docs/manual-testing-kind.md)** — local end-to-end federation testing.
-- **[Manual Callback Testing with Kind](docs/manual-callbacks-testing-kind.md)** — local testing of the callback flow.
+- **[Manual Federation Testing with Kind](docs/testing/manual-testing-kind.md)** — local end-to-end federation testing.
+- **[Manual Callback Testing with Kind](docs/testing/manual-callbacks-testing-kind.md)** — local testing of the callback flow.
 
 ## Contributing
 
