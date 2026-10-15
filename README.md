@@ -44,10 +44,6 @@ All pull requests must follow the project's contribution requirements, including
 
 This open source project is part of activities carried out within the Important Project of Common European Interest on Next Generation Cloud Infrastructure and Services (IPCEI-CIS), an EU initiative to build a sovereign, interoperable and energy-efficient cloud-to-edge infrastructure in Europe.
 
-<p align="center">
-  <img src="assets/eu-funded-nextgenerationeu.png" alt="EU funding logo" width="300" />
-</p>
-
 ## Documentation
 
 The documentation describes how the federation system works internally, from the concepts and architecture through to the implementation and deployment of the Federation Manager.
