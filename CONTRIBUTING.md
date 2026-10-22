@@ -305,7 +305,7 @@ Images and diagrams are an important part of the project documentation.
 
 When adding or modifying static images:
 
-- Store repository images in the appropriate `docs/images/` directory.
+- Store documentation images in the appropriate subdirectory of `docs/assets/`, such as `asset-architecture/`, `asset-deployment/` or `asset-testing/`.
 - Use meaningful filenames.
 - Check that image paths work from the page where the image is referenced.
 - Use appropriate image formats and resolutions.
