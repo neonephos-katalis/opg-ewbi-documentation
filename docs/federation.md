@@ -117,27 +117,48 @@ The selected Availability Zones can subsequently be associated with applications
 
 # Federation Resource Model
 
-Federation uses a set of related resources to describe the relationship between operators, the application content available to them, and where applications can run.
+## Resource Definitions
+
+The federation uses several related resources to represent the operator relationship, the content needed to deploy an application, and the locations where it can run.
 
 Each resource has a specific role:
 
-- **Federation** establishes the relationship between the Guest and Host.
-- **Availability Zone** identifies a partner site where an application may run.
-- **File** represents deployable content, such as a container image or virtual machine image.
-- **Artefact** describes a deployable package (Helm chart) and the files it requires.
-- **Application** identifies the application, the artefacts it uses, and the Availability Zones in which it can run.
-- **ApplicationInstance** represents a requested or running instance of an application in a specific Availability Zone.
+### Federation
 
+A Federation represents the relationship between the originating operator (Guest) and the partner operator (Host). It establishes the federation context and provides the `federationContextId` used to associate subsequent federation operations and resources with the correct relationship.
+
+### Availability Zone
+
+An Availability Zone represents a site or location offered by the Host where an application can run. The Guest can select from the zones offered by the Host when preparing an application for deployment.
+
+### Image
+
+An Image represents deployable application content registered within the federation, such as a container image or virtual machine image.
+
+### Artefact
+
+An Artefact describes a deployable package, such as a Helm chart, and the Images it requires.
+
+### ApplicationOnboarding
+
+An ApplicationOnboarding represents an application that is being onboarded into the federation. It identifies the Artefacts required by the application and the Availability Zones in which it can run.
+
+### ApplicationDeployment
+
+An `ApplicationDeployment` represents a requested or running deployment of an onboarded application in a specific Availability Zone. The Host's local orchestration platform is responsible for executing the actual workload deployment.
+
+
+## Resource Relationship
 The diagram below describes the logical relationships between these resources. It is a relationship diagram, not a workflow: the connections indicate how resources are associated with one another, rather than the order in which federation operations occur.
 
 ```mermaid
 flowchart LR
     F["Federation"]
     Z["Availability Zone"]
-    FI["File"]
+    FI["Image"]
     AR["Artefact"]
-    AP["Application"]
-    AI["ApplicationInstance"]
+    AP["ApplicationOnboarding"]
+    AI["ApplicationDeployment"]
 
     F -->|"1 : N"| Z
     F -->|"1 : N"| FI
@@ -155,91 +176,22 @@ The cardinalities in the diagram describe the expected logical relationships bet
 | Relationship | Cardinality | Meaning |
 |---|---|---|
 | Federation → Availability Zone | One to many | A federation can include multiple partner sites. |
-| Federation → File | One to many | A federation can include multiple registered files. |
-| File → Artefact | Many to one | Multiple files can belong to one artefact. |
-| Artefact → Application | Many to one | Multiple artefacts can be referenced by one application. |
-| Availability Zone → Application | Many to one | An application can be associated with multiple Availability Zones. |
-| Application → ApplicationInstance | One to many | An application can have multiple instances. |
-| Availability Zone → ApplicationInstance | One to many | An Availability Zone can host multiple instances. |
+| Federation → Image | One to many | A federation can include multiple registered images. |
+| Image → Artefact | Many to one | Multiple images can belong to one artefact. |
+| Artefact → ApplicationOnboarding | Many to one | Multiple artefacts can be referenced by one application. |
+| Availability Zone → ApplicationOnboarding | Many to one | An application onboarding can be associated with multiple Availability Zones. |
+| ApplicationOnboarding → ApplicationDeployment | One to many | An application onboarding can have multiple deployments. |
+| Availability Zone → ApplicationDeployment | One to many | An Availability Zone can host multiple deployments. |
 
 The relationships can also be read in the reverse direction:
 
-- Each `ApplicationInstance` refers to one Application.
-- Each `ApplicationInstance` targets one Availability Zone.
-- An Application references the Artefacts it requires and the Availability Zones in which it can run.
-- An Artefact identifies the Files it requires.
+- Each `ApplicationDeployment` refers to one Application Onboarding.
+- Each `ApplicationDeployment` targets one Availability Zone.
+- An `ApplicationOnboarding` references the Artefacts it requires and the Availability Zones in which it can run.
+- An `Artefact` identifies the Images it requires.
 
 These relationships explain how the resources fit together, independently of the operations used to create, exchange or update them.
 
-## Resource Definitions
-
-### Federation
-
-A Federation represents the agreement and relationship between the originating operator (Guest) and the partner operator (Host).
-
-It establishes the federation context and provides the `federationContextId` used to associate subsequent federation operations and resources with the correct relationship.
-
-### Availability Zone
-
-An Availability Zone represents a site or location offered by the Host where an application can run.
-
-The Guest can select from the Availability Zones offered by the Host. An Application can be associated with multiple Availability Zones, allowing deployments to be requested in different locations.
-
-Each individual `ApplicationInstance`, however, targets one specific Availability Zone.
-
-### File
-
-A File represents deployable application content registered within the federation, such as a container image or virtual machine image.
-
-Files provide the content required by Artefacts. An Application does not reference Files directly; it references Artefacts that specify the Files they require.
-
-### Artefact
-
-An Artefact describes a deployable package, such as a Helm chart, and the Files it requires.
-
-It connects the deployable content represented by Files with the Application that uses it. An Artefact can require multiple Files, and an Application can reference multiple Artefacts.
-
-### Application
-
-An Application represents the application being onboarded into the federation.
-
-It identifies the Artefacts required by the application and the Availability Zones in which the application can run. It does not directly list the Files required by its Artefacts.
-
-An Application can be used to create multiple `ApplicationInstance` resources.
-
-### ApplicationInstance
-
-An `ApplicationInstance` represents a requested or running instance of an Application in a specific Availability Zone.
-
-Each instance refers to one Application and one target Availability Zone. The same Application can therefore have multiple instances, potentially across different zones.
-
-The `ApplicationInstance` resource describes the requested deployment and its state. The Host's local orchestration platform is responsible for executing the actual workload deployment.
-
-## Key Relationships to Understand
-
-Two relationships are particularly important when reading the resource model.
-
-**Files reach Applications through Artefacts.**
-
-The relationship is:
-
-`File → Artefact → Application`
-
-The Application references the Artefact, and the Artefact identifies the Files it requires. There is no direct File–Application relationship.
-
-**Applications and deployments have different roles.**
-
-An Application identifies the application and the zones in which it can run. An `ApplicationInstance` selects one specific zone for an individual deployment.
-
-The relationship is:
-
-`Application + Availability Zone → ApplicationInstance`
-
-This means that one Application can have multiple instances, including instances in different Availability Zones.
-
-The following sections explain how the Guest and Host exchange resources, onboard applications and request deployments.
-
----
 
 # Application Onboarding
 
@@ -274,19 +226,19 @@ sequenceDiagram
     GC-->>G: 6. Updated application state
 ```
 
-Once onboarded, an Application can be used to create one or more `ApplicationInstance` resources, each targeting a specific Availability Zone.
+Once onboarded, an Application can be used to create one or more `ApplicationDeployment` resources, each targeting a specific Availability Zone.
 
 ---
 
 # Application Deployment
 
-Application deployment begins when the Guest requests an `ApplicationInstance` for an onboarded Application.
+Application deployment begins when the Guest requests an `ApplicationDeployment` for an onboarded Application.
 
-The Guest identifies the Application and the Availability Zone in which the instance should run. Each `ApplicationInstance` represents one deployment of one Application in one Availability Zone.
+The Guest identifies the ApplicationOnboarding and the Availability Zone in which the deployment should run. Each `ApplicationDeployment` represents one deployment of one ApplicationOnboarding in one Availability Zone.
 
 The request is sent to the Host through the federation interface.
 
-On the Host, the deployment request is represented as a Kubernetes `ApplicationInstance` resource.
+On the Host, the deployment request is represented as a Kubernetes `ApplicationDeployment` resource.
 
 This resource contains the information required to describe the requested deployment, including the Application, version, target Availability Zone and resource requirements.
 
@@ -297,7 +249,7 @@ The separation is important:
 ```mermaid
 flowchart TD
     F["1. Federation context"]
-    AI["2. ApplicationInstance"]
+    AI["2. ApplicationDeployment"]
     HK["3. Host Kubernetes"]
     LO["4. Local orchestration"]
     AW["5. Application workload"]
@@ -321,14 +273,14 @@ sequenceDiagram
     participant O as Local Orchestrator
     participant W as Application Workload
 
-    G->>GA: 1. Request ApplicationInstance
+    G->>GA: 1. Request ApplicationDeployment
     GA->>HA: 2. Application deployment request
-    HA->>HK: 3. Create ApplicationInstance
+    HA->>HK: 3. Create ApplicationDeployment
     HK-->>HA: 4. Resource created
     HA-->>GA: 5. Deployment accepted
-    GA-->>G: 6. ApplicationInstance status
+    GA-->>G: 6. ApplicationDeployment status
 
-    HK->>O: 7. ApplicationInstance information
+    HK->>O: 7. ApplicationDeployment information
     O->>W: 8. Deploy application
 ```
 
@@ -354,7 +306,7 @@ flowchart TD
     P --> O
 ```
 
-An `ApplicationInstance` can move from `PENDING` to `READY` when the deployment is ready.
+An `ApplicationDeployment` can move from `PENDING` to `READY` when the deployment is ready.
 
 ```mermaid
 flowchart TD
@@ -374,7 +326,7 @@ flowchart TD
     P --> F
 ```
 
-An ApplicationInstance may also enter `TERMINATING` when it is being removed.
+An ApplicationDeployment may also enter `TERMINATING` when it is being removed.
 
 ```mermaid
 flowchart TD
@@ -426,15 +378,15 @@ sequenceDiagram
 
 Callbacks can communicate changes associated with resources such as:
 
-- Applications
-- ApplicationInstances
-- Files
+- ApplicationOnboardings
+- ApplicationDeployments
+- Images
 - Artefacts
 - Federation status
 
 The callback information allows the receiving operator to update its local representation of the resource.
 
-For example, when an ApplicationInstance changes state, the Host can send the current state and access-point information to the Guest. The Guest can then update its local ApplicationInstance resource.
+For example, when an ApplicationDeployment changes state, the Host can send the current state and access-point information to the Guest. The Guest can then update its local ApplicationDeployment resource.
 
 ---
 
@@ -479,11 +431,11 @@ Examples include:
 - A requested resource not being available.
 - A communication failure between operators.
 - A problem processing a workload.
-- An application or ApplicationInstance being unable to reach its requested state.
+- An ApplicationOnboarding or ApplicationDeployment being unable to reach its requested state.
 
 When an operation fails, the corresponding federation resource records an error or failed state.
 
-For example, applications can enter `FAILED`, while ApplicationInstances can enter `FAILED` or `TERMINATING`, depending on the operation being performed.
+For example, applications can enter `FAILED`, while ApplicationDeployments can enter `FAILED` or `TERMINATING`, depending on the operation being performed.
 
 Intermediate states such as `PENDING` allow an operation to remain active while processing is still in progress.
 
@@ -501,8 +453,8 @@ flowchart TD
     AZ["2. Availability Zones selected"]
     R["3. Application resources prepared"]
     A["4. Application onboarded"]
-    D["5. ApplicationInstance requested"]
-    H["6. Host-side ApplicationInstance created"]
+    D["5. ApplicationDeployment requested"]
+    H["6. Host-side ApplicationDeployment created"]
     O["7. Local orchestration"]
     W["8. Application workload deployed"]
     S["9. Status updates exchanged"]
@@ -519,7 +471,7 @@ flowchart TD
 
 This lifecycle describes the progression from establishing a federation relationship to executing an application workload and exchanging status updates.
 
-It is a simplified operational view, not a representation of direct resource dependencies. For example, an Application references both Artefacts and Availability Zones, while an ApplicationInstance identifies one Application and one target Availability Zone.
+It is a simplified operational view, not a representation of direct resource dependencies. For example, an Application references both Artefacts and Availability Zones, while an ApplicationDeployment identifies one ApplicationOnboarding and one target Availability Zone.
 
 The federation layer coordinates the relationship and exchanges information between operators, while each operator retains responsibility for its own local platform and workload execution.
 

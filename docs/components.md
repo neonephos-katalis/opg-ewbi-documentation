@@ -290,7 +290,7 @@ The current resource types are:
 | Resource               | Kubernetes type         |
 | ---------------------- | ----------------------- |
 | Federation             | `Federation`            |
-| Availability Zone      | `Zone`                  |
+| Availability Zone      | `AvailabilityZone`                  |
 | Image                  | `Image`                 |
 | Artefact               | `Artefact`              |
 | Application Onboarding | `ApplicationOnboarding` |

@@ -10,9 +10,9 @@ For the GSMA interface specification, see the [East-Westbound Interface APIs](ht
 
 ## Project Scope
 
-This repository contains two main software components:
+The project consists of two main software components:
 
-- **OPG EWBI API** — provides the REST interface used for communication between federated operator platforms.
+- **OPG EWBI API** — provides the interface used for communication between federated operator platforms.
 - **OPG EWBI Operator** — manages federation-related Kubernetes resources and connects them to federation operations.
 
 The software provides the federation interface and the Kubernetes representation of federation resources. It does not, by itself, provide a complete end-to-end edge orchestration solution. Operators are expected to integrate it with their own resource management systems or orchestrators, which carry out platform-specific workload operations.
@@ -48,7 +48,6 @@ Contributions must follow the project's contribution requirements, including con
 
 This open-source project is part of activities carried out within the **Important Project of Common European Interest on Next Generation Cloud Infrastructure and Services (IPCEI-CIS)**, an EU initiative to build a sovereign, interoperable and energy-efficient cloud-to-edge infrastructure in Europe.
 
-=======
 <p align="center">
   <img src="assets/eu-funded-nextgenerationeu.png" alt="EU funding logo" width="300" />
 </p>
