@@ -2,7 +2,7 @@
 
 This document describes how federation operations are performed between participating operators.
 
-It focuses on the lifecycle of a federation relationship, how federation resources move between operators, how application deployments are requested and executed, and how status information is propagated.
+It covers the lifecycle of a federation relationship, the relationships between federation resources, how application deployments are requested and executed, and how status information is propagated between operators.
 
 For the architecture and implementation of the individual components, see [Architecture](architecture.md) and [Core Components](components.md).
 
@@ -16,36 +16,43 @@ The operator requesting access to a partner's capabilities acts as the **Guest**
 
 The relationship is associated with a unique **Federation Context ID**. This identifier is used to associate subsequent federation operations with the correct relationship.
 
-A federation can be viewed as a progression from establishing the relationship through to deploying and managing applications:
+The federation lifecycle progresses from establishing the relationship to selecting Availability Zones, onboarding application resources, requesting deployments and exchanging status updates.
 
-```mermaid id="mq7x4s"
+The following diagram provides a high-level overview of this lifecycle.
+
+```mermaid
 flowchart TD
-
-    F["1. Federation"]
-    AZ["2. Availability Zone subscription"]
-    R["3. Resource onboarding"]
-    A["4. Application onboarding"]
-    I["5. Application deployment"]
+    F["1. Federation established"]
+    AZ["2. Availability Zones selected"]
+    R["3. Application resources prepared"]
+    A["4. Application onboarded"]
+    D["5. Application deployment requested"]
     S["6. Status and lifecycle updates"]
 
     F --> AZ
     AZ --> R
     R --> A
-    A --> I
-    I --> S
+    A --> D
+    D --> S
 ```
+
+This diagram describes the overall progression of federation operations. The relationships between the individual resources are described in the [Federation Resource Model](#federation-resource-model) section.
 
 ---
 
 # End-to-End Federation Workflow
 
-A typical application deployment progresses through three broad stages: establishing the federation relationship, accepting an Availability Zone offered by the Host, and preparing and deploying the application.
+A typical application deployment progresses through three broad stages:
+
+1. Establishing the federation relationship.
+2. Accepting an Availability Zone offered by the Host.
+3. Preparing, onboarding and deploying the application.
 
 The following diagram provides a simplified end-to-end view of these stages and the operations involved.
 
 ![End-to-end federation workflow](images/federation-workflow.png)
 
-# Federation Registration
+## Federation Registration
 
 Federation registration establishes the relationship between the Guest and Host.
 
@@ -65,7 +72,7 @@ At a high level:
 
 ### Federation registration sequence
 
-```mermaid id="9h6g4m"
+```mermaid
 sequenceDiagram
     participant G as Guest
     participant GA as Guest EWBI API
@@ -84,15 +91,15 @@ The Federation Context ID is then used by subsequent federation operations to id
 
 ---
 
-# Availability Zone Subscription
+## Availability Zone Subscription
 
 After federation has been established, the Host can make Availability Zones available to the Guest.
 
-The Guest receives information about the zones offered by the Host and can select the zones it wishes to use.
+An Availability Zone represents a partner site or location where an application can run.
 
-The Host then records the zones accepted by the Guest.
+The Guest receives information about the zones offered by the Host and can select the zones it wishes to use. The Host then records the zones accepted by the Guest.
 
-The basic relationship is:
+The basic interaction is:
 
 ```mermaid
 sequenceDiagram
@@ -104,68 +111,93 @@ sequenceDiagram
     H->>H: 3. Records accepted zones
 ```
 
-The Availability Zone information becomes part of the context used for subsequent application operations.
+The selected Availability Zones can subsequently be associated with applications and used to identify the target location for each deployment.
 
 ---
 
-# Resource Flow
+# Federation Resource Model
 
-Federation resources build on one another.
+## Resource Definitions
 
-The main resource relationship is:
+The federation uses several related resources to represent the operator relationship, the content needed to deploy an application, and the locations where it can run.
 
-```mermaid id="0o0m6g"
-flowchart TD
+Each resource has a specific role:
 
-    F["1. Federation"]
-    FILE["2. File"]
-    ART["3. Artefact"]
-    APP["4. Application"]
-    INST["5. ApplicationInstance"]
+### Federation
 
-    F --> FILE
-    FILE --> ART
-    ART --> APP
-    APP --> INST
+A Federation represents the relationship between the originating operator (Guest) and the partner operator (Host). It establishes the federation context and provides the `federationContextId` used to associate subsequent federation operations and resources with the correct relationship.
+
+### Availability Zone
+
+An Availability Zone represents a site or location offered by the Host where an application can run. The Guest can select from the zones offered by the Host when preparing an application for deployment.
+
+### Image
+
+An Image represents deployable application content registered within the federation, such as a container image or virtual machine image.
+
+### Artefact
+
+An Artefact describes a deployable package, such as a Helm chart, and the Images it requires.
+
+### ApplicationOnboarding
+
+An ApplicationOnboarding represents an application that is being onboarded into the federation. It identifies the Artefacts required by the application and the Availability Zones in which it can run.
+
+### ApplicationDeployment
+
+An `ApplicationDeployment` represents a requested or running deployment of an onboarded application in a specific Availability Zone. The Host's local orchestration platform is responsible for executing the actual workload deployment.
+
+
+## Resource Relationship
+The diagram below describes the logical relationships between these resources. It is a relationship diagram, not a workflow: the connections indicate how resources are associated with one another, rather than the order in which federation operations occur.
+
+```mermaid
+flowchart LR
+    F["Federation"]
+    Z["Availability Zone"]
+    FI["Image"]
+    AR["Artefact"]
+    AP["ApplicationOnboarding"]
+    AI["ApplicationDeployment"]
+
+    F -->|"1 : N"| Z
+    F -->|"1 : N"| FI
+    FI -->|"N : 1"| AR
+    AR -->|"N : 1"| AP
+    Z -->|"N : 1"| AP
+    AP -->|"1 : N"| AI
+    Z -->|"1 : N"| AI
 ```
 
-Each stage provides information required by the following stage.
+## Resource Relationships
 
-## Federation
+The cardinalities in the diagram describe the expected logical relationships between resources.
 
-The Federation establishes the relationship and provides the Federation Context in which subsequent resources are exchanged.
+| Relationship | Cardinality | Meaning |
+|---|---|---|
+| Federation → Availability Zone | One to many | A federation can include multiple partner sites. |
+| Federation → Image | One to many | A federation can include multiple registered images. |
+| Image → Artefact | Many to one | Multiple images can belong to one artefact. |
+| Artefact → ApplicationOnboarding | Many to one | Multiple artefacts can be referenced by one application. |
+| Availability Zone → ApplicationOnboarding | Many to one | An application onboarding can be associated with multiple Availability Zones. |
+| ApplicationOnboarding → ApplicationDeployment | One to many | An application onboarding can have multiple deployments. |
+| Availability Zone → ApplicationDeployment | One to many | An Availability Zone can host multiple deployments. |
 
-## File
+The relationships can also be read in the reverse direction:
 
-A File represents deployable application content, such as an application image.
+- Each `ApplicationDeployment` refers to one Application Onboarding.
+- Each `ApplicationDeployment` targets one Availability Zone.
+- An `ApplicationOnboarding` references the Artefacts it requires and the Availability Zones in which it can run.
+- An `Artefact` identifies the Images it requires.
 
-The Guest makes the file available to the Host as part of the application onboarding process.
+These relationships explain how the resources fit together, independently of the operations used to create, exchange or update them.
 
-## Artefact
-
-An Artefact describes information needed to deploy an application workload.
-
-It can describe workload components, images, resource requirements, interfaces and other deployment information.
-
-## Application
-
-An Application represents the application being onboarded into the federation.
-
-It references the artefacts required to deploy its components and contains application metadata and requirements.
-
-## ApplicationInstance
-
-An ApplicationInstance represents an instance of an application that is requested for deployment in a particular Availability Zone.
-
-It connects the application with a specific deployment location and the information required to execute that deployment.
-
----
 
 # Application Onboarding
 
 Application onboarding makes an application available within the federation so that it can subsequently be deployed.
 
-The Guest provides the Host with the application information and the artefacts required to support the application.
+The Guest provides the Host with the application information and the Artefacts required to support the application. Those Artefacts identify the Files required by the application.
 
 The Host creates the corresponding local application representation and processes the onboarding request.
 
@@ -179,7 +211,7 @@ The basic flow is:
 
 ### Application onboarding sequence
 
-```mermaid id="9u9z4g"
+```mermaid
 sequenceDiagram
     participant G as Guest
     participant GC as Guest application processing
@@ -194,21 +226,21 @@ sequenceDiagram
     GC-->>G: 6. Updated application state
 ```
 
-An application can then be used to create one or more application instances.
+Once onboarded, an Application can be used to create one or more `ApplicationDeployment` resources, each targeting a specific Availability Zone.
 
 ---
 
 # Application Deployment
 
-Application deployment begins when the Guest requests an `ApplicationInstance` for an onboarded application.
+Application deployment begins when the Guest requests an `ApplicationDeployment` for an onboarded Application.
 
-The Guest identifies the application and the Availability Zone in which the instance should be deployed.
+The Guest identifies the ApplicationOnboarding and the Availability Zone in which the deployment should run. Each `ApplicationDeployment` represents one deployment of one ApplicationOnboarding in one Availability Zone.
 
 The request is sent to the Host through the federation interface.
 
-On the Host, the deployment request is represented as a Kubernetes `ApplicationInstance` resource.
+On the Host, the deployment request is represented as a Kubernetes `ApplicationDeployment` resource.
 
-This resource contains the information required to describe the requested deployment, including the application, version, target Availability Zone and resource requirements.
+This resource contains the information required to describe the requested deployment, including the Application, version, target Availability Zone and resource requirements.
 
 The Host's local orchestration platform can then use this resource to perform the actual workload deployment.
 
@@ -216,8 +248,8 @@ The separation is important:
 
 ```mermaid
 flowchart TD
-    F["1. Federation"]
-    AI["2. ApplicationInstance"]
+    F["1. Federation context"]
+    AI["2. ApplicationDeployment"]
     HK["3. Host Kubernetes"]
     LO["4. Local orchestration"]
     AW["5. Application workload"]
@@ -232,7 +264,7 @@ The federation layer coordinates the request, while the Host remains responsible
 
 ### Application deployment sequence
 
-```mermaid id="8v8l5z"
+```mermaid
 sequenceDiagram
     participant G as Guest
     participant GA as Guest federation processing
@@ -241,14 +273,14 @@ sequenceDiagram
     participant O as Local Orchestrator
     participant W as Application Workload
 
-    G->>GA: 1. Request ApplicationInstance
+    G->>GA: 1. Request ApplicationDeployment
     GA->>HA: 2. Application deployment request
-    HA->>HK: 3. Create ApplicationInstance
+    HA->>HK: 3. Create ApplicationDeployment
     HK-->>HA: 4. Resource created
     HA-->>GA: 5. Deployment accepted
-    GA-->>G: 6. ApplicationInstance status
+    GA-->>G: 6. ApplicationDeployment status
 
-    HK->>O: 7. ApplicationInstance information
+    HK->>O: 7. ApplicationDeployment information
     O->>W: 8. Deploy application
 ```
 
@@ -260,14 +292,11 @@ The exact interaction between the Host Kubernetes environment and the local orch
 
 Federation resources have both a requested state and an observed state.
 
-The requested information describes what the operator wants to happen.
-
-The observed state records the current state of the federation operation.
+The requested information describes what the operator wants to happen. The observed state records the current state of the federation operation.
 
 This allows federation operations to progress asynchronously rather than requiring the original request to remain open until the operation has completely finished.
 
-For example, an application may initially be:
-
+For example, an application may initially be in the `PENDING` state and subsequently become `ONBOARDED`.
 
 ```mermaid
 flowchart TD
@@ -277,7 +306,7 @@ flowchart TD
     P --> O
 ```
 
-while an application instance can move through states such as:
+An `ApplicationDeployment` can move from `PENDING` to `READY` when the deployment is ready.
 
 ```mermaid
 flowchart TD
@@ -287,7 +316,7 @@ flowchart TD
     P --> R
 ```
 
-or:
+If the operation encounters an error, the resource may instead enter a `FAILED` state.
 
 ```mermaid
 flowchart TD
@@ -297,7 +326,7 @@ flowchart TD
     P --> F
 ```
 
-An application instance may also enter:
+An ApplicationDeployment may also enter `TERMINATING` when it is being removed.
 
 ```mermaid
 flowchart TD
@@ -307,9 +336,21 @@ flowchart TD
     R --> T
 ```
 
-when it is being removed.
-
 The Guest and Host each maintain their own local representation of the relevant federation resources. Status information is propagated between the operators so that the Guest can observe changes occurring on the Host.
+
+---
+
+# Federation Expiry and Locking
+
+A Federation has an expiry date that controls how long the federation relationship remains available for operations.
+
+When a Host-side Federation is created, its initial expiry date is set to 24 hours after its initial date. A renewal date is set to 23 hours after the initial date.
+
+At the renewal date, the expiry is extended once by a further 24 hours. If the Federation subsequently expires, its state becomes `LOCKED`.
+
+While a Federation is not in the `AVAILABLE` state, its child resources are not reconciled. This prevents normal processing of those resources while the Federation is unavailable.
+
+When testing or creating sample Federation resources, ensure that `initialDate` is appropriate for the intended lifecycle. Reusing an old initial date can cause the Federation to reach expiry and become `LOCKED` almost immediately.
 
 ---
 
@@ -321,7 +362,7 @@ Instead of requiring the Guest to repeatedly query the Host for changes, the Hos
 
 The general pattern is:
 
-```mermaid id="w2fkwm"
+```mermaid
 sequenceDiagram
     participant G as Guest resource
     participant GA as Guest
@@ -337,15 +378,15 @@ sequenceDiagram
 
 Callbacks can communicate changes associated with resources such as:
 
-* Applications
-* Application Instances
-* Files
-* Artefacts
-* Federation status
+- ApplicationOnboardings
+- ApplicationDeployments
+- Images
+- Artefacts
+- Federation status
 
 The callback information allows the receiving operator to update its local representation of the resource.
 
-For example, when an Application Instance changes state, the Host can send the current state and access-point information to the Guest. The Guest can then update its local ApplicationInstance resource.
+For example, when an ApplicationDeployment changes state, the Host can send the current state and access-point information to the Guest. The Guest can then update its local ApplicationDeployment resource.
 
 ---
 
@@ -353,12 +394,11 @@ For example, when an Application Instance changes state, the Host can send the c
 
 ## Callbacks
 
-Callbacks are used to communicate asynchronous status information from one operator to another.
+Callbacks communicate asynchronous status information from one operator to another.
 
 This allows a federation operation to continue independently while the participating operators exchange status updates.
 
 A simplified communication model is:
-
 
 ```mermaid
 sequenceDiagram
@@ -369,7 +409,7 @@ sequenceDiagram
     G->>E: 1. Federation operation
     E->>H: 2. Request
 
-    Note over H: Process operation<br/>and update resource state
+    Note over H: Process operation and update resource state
 
     H-->>E: 3. Callback
     E-->>G: 4. Status update
@@ -387,15 +427,15 @@ Federation operations can fail at different points in their lifecycle.
 
 Examples include:
 
-* Invalid federation or application information
-* A requested resource not being available
-* A communication failure between operators
-* A problem processing a workload
-* An application or application instance being unable to reach its requested state
+- Invalid federation or application information.
+- A requested resource not being available.
+- A communication failure between operators.
+- A problem processing a workload.
+- An ApplicationOnboarding or ApplicationDeployment being unable to reach its requested state.
 
 When an operation fails, the corresponding federation resource records an error or failed state.
 
-For example, applications can enter `FAILED`, while application instances can enter `FAILED` or `TERMINATING` depending on the operation being performed.
+For example, applications can enter `FAILED`, while ApplicationDeployments can enter `FAILED` or `TERMINATING`, depending on the operation being performed.
 
 Intermediate states such as `PENDING` allow an operation to remain active while processing is still in progress.
 
@@ -405,42 +445,42 @@ The resource state therefore provides the primary indication of whether an opera
 
 # Federation Lifecycle Summary
 
-The complete lifecycle can be summarised as:
+The complete lifecycle can be summarised as follows:
 
-```mermaid id="0obq5u"
+```mermaid
 flowchart TD
-
     F["1. Federation established"]
     AZ["2. Availability Zones selected"]
-    FILE["3. Files available"]
-    ART["4. Artefacts available"]
-    APP["5. Application onboarded"]
-    INST["6. ApplicationInstance requested"]
-    HOST["7. Host-side ApplicationInstance"]
-    ORCH["8. Local orchestration"]
-    WORK["9. Application running"]
-    STATUS["10. Status updates"]
+    R["3. Application resources prepared"]
+    A["4. Application onboarded"]
+    D["5. ApplicationDeployment requested"]
+    H["6. Host-side ApplicationDeployment created"]
+    O["7. Local orchestration"]
+    W["8. Application workload deployed"]
+    S["9. Status updates exchanged"]
 
     F --> AZ
-    AZ --> FILE
-    FILE --> ART
-    ART --> APP
-    APP --> INST
-    INST --> HOST
-    HOST --> ORCH
-    ORCH --> WORK
-    WORK --> STATUS
-    STATUS --> INST
+    AZ --> R
+    R --> A
+    A --> D
+    D --> H
+    H --> O
+    O --> W
+    W --> S
 ```
 
-This lifecycle describes the relationship between the major federation resources and the progression from federation establishment to application execution.
+This lifecycle describes the progression from establishing a federation relationship to executing an application workload and exchanging status updates.
+
+It is a simplified operational view, not a representation of direct resource dependencies. For example, an Application references both Artefacts and Availability Zones, while an ApplicationDeployment identifies one ApplicationOnboarding and one target Availability Zone.
 
 The federation layer coordinates the relationship and exchanges information between operators, while each operator retains responsibility for its own local platform and workload execution.
+
+---
 
 ## Related Documentation
 
 * [Quick Start Guide](Quick-start-introduction.md) — Introduction to the platform and its key concepts.
 * [Architecture](architecture.md) — Describes the high-level architecture of the EWBI Federation Platform
 * [Core Components](components.md) — Detailed responsibilities and implementation of the platform components.
-* [Federation Model and Workflows](federation.md) — Detailed federation behaviour and resource workflows.
 * [Security](security.md) — Security model and trust boundaries.
+* [Deployment](deployment.md) — Setup and deployment of the federation manager
