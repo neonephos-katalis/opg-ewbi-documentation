@@ -71,24 +71,8 @@ While this is the long-term goal, the current implementation supports Kubernetes
 VMs and Kubernetes clusters (or cluster slices) are not supported as resources you can acquire, but may be introduced in the future with either Kubernetes plugins or other ad-hoc mechanisms.
 
 Katalis itself does not deploy anything.
-It acts as federation bridge: it handles the GSMA EWB exchange between the two operators and turns each request (from image up to application deployment) into Kubernetes resources on the partner op (host) operator's side.
+It acts as federation bridge: it handles the GSMA EWBI exchange between the two operators and turns each request (from image up to application deployment) into Kubernetes resources on the partner op (host) operator's side.
 A separate orchestrator on the host side must watch those resources and do the actual work on its infrastructure.
-
----
-
-**EWBI (East-West Bound Interface)** is a GSMA-defined set of interfaces for interoperability between Operator Platforms.
-
-The EWBI APIs provide a standardised way for participating operators to exchange federation information and perform operations such as:
-
-* Establishing federation relationships
-* Sharing Availability Zone information
-* Onboarding application resources
-* Requesting application deployments
-* Exchanging status information
-
-The EWBI Federation Platform implements these interfaces so that operators can participate in federation without needing to expose the internal implementation of their own platform.
-
-The detailed implementation of the EWBI interfaces is described in [Core Components](components.md).
 
 ---
 
