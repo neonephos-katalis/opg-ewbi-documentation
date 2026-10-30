@@ -57,6 +57,24 @@ The detailed implementation of the EWBI interfaces is described in [Core Compone
 
 ---
 
+## Which resources are exchanged?
+
+Katalis aims to provide the basic mechanisms for different organizations to negotiate, offer and acquire any type of resource, such as VMs, Kubernetes clusters, slices of a Kubernetes cluster, applications, and more.
+
+While this is the long-term goal, the current implementation supports Kubernetes-ready applications (Helm charts, manifests, Kubernetes-deployable packages) running on a partner operator's edge infrastructure, leveraging the following high-level workflow:
+
+* The partner OP (host) offers availability zones. Each zone is an edge location and discloses:
+  * its geographic position and coverage;
+  * the compute capacity available (CPU, memory, storage, GPUs, flavours, network and latency/throughput targets).
+* The originating OP (guest) subscribes to zones and asks for its applications to run there. It goes through the following GSMA flow: Image -> Artefact -> ApplicationOnboarding -> ApplicationDeployment.
+
+VMs and Kubernetes clusters (or cluster slices) are not supported as resources you can acquire, but may be introduced in the future with either Kubernetes plugins or other ad-hoc mechanisms.
+
+Katalis itself does not deploy anything. It acts as a federation bridge: handling the GSMA EWBI exchange between the two operators and turns each request (from image up to application deployment) into Kubernetes resources on the partner OP's side.
+A separate orchestrator on the host side must watch those resources and do the actual work on its infrastructure.
+
+---
+
 ## Federation at a Glance
 
 At a conceptual level, federation can be viewed as a Guest requesting and using capabilities provided by a Host.
