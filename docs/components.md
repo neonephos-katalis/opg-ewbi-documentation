@@ -12,18 +12,22 @@ The core federation implementation consists of the following components:
 
 ```mermaid
 flowchart LR
-
-    subgraph FED["EWBI Federation Platform"]
-        CR["Kubernetes Custom Resources"]
-        OP["EWBI Operator"]
-        API["EWBI API"]
-
-        CR --> OP
-        OP --> API
+    subgraph G["Guest Operator"]
+        GAPI["EWBI API"]
+        GCR["Federation Custom Resources"]
+        GOP["EWBI Operator"]
     end
 
-    API --> LOCAL["Local Operator Platform"]
+    subgraph H["Host Operator"]
+        HAPI["EWBI API"]
+        HCR["Federation Custom Resources"]
+        HOP["EWBI Operator"]
+    end
+
+    GAPI <--> |"EWBI"| HAPI
 ```
+
+The diagram shows the main components and the external communication boundary between operators. It does not represent all internal interactions between the EWBI Operator, Custom Resources and local platform components, which are described in the sections below.
 
 The **EWBI Operator** and **EWBI API** form the main federation software.
 
@@ -41,7 +45,9 @@ The same core components can be present on both sides of a federation relationsh
 
 On the Guest side, federation resources are represented as Kubernetes Custom Resources.
 
-The EWBI Operator monitors these resources and, where required, performs federation operations against the partner operator through the EWBI API.
+The EWBI Operator monitors these resources and performs federation operations using the mechanism configured for the federation. In REST mode, operations are exchanged through the partner's EWBI API. In K8S mode, the Guest Operator can use a kubeconfig to manage corresponding resources directly in the partner's Kubernetes environment and synchronise their status back to the Guest.
+
+The federation configuration determines how the Guest Operator manages and synchronises federation resources. The underlying resource-management mechanism does not change the logical federation resource model.
 
 For example, the `FederationReconciler` identifies a Guest federation resource and can use it to initiate federation establishment with the partner and process the Availability Zones offered by that partner.
 
@@ -55,10 +61,10 @@ The API uses a Kubernetes-backed metastore to create and manage these resources.
 
 For example:
 
-* Application onboarding creates an `Application` resource.
-* Application installation creates an `ApplicationInstance` resource.
-* File upload creates a `File` resource.
+* Image upload creates an `Image` resource.
 * Artefact upload creates an `Artefact` resource.
+* Application onboarding creates an `ApplicationOnboarding` resource.
+* Application installation creates an `ApplicationDeployment` resource.
 
 The API therefore provides the transition between the external EWBI interface and the Host's local Kubernetes environment.
 
@@ -74,11 +80,11 @@ It consists of the **EWBI Operator** and **EWBI API**. Together, these component
 
 The Federation Manager is not an end-to-end resource orchestration solution. It is integrated with the operator's local edge resource management or orchestration environment, which is responsible for carrying out platform-specific operations.
 
+The controller and API interactions described below explain the EWBI API-based implementation where applicable. The communication mechanism used for a federation is determined by its configuration, as described in [Architecture](architecture.md).
+
 The following diagram shows the main building blocks of the Federation Manager and their relationships.
 
 ![Federation Manager architecture](images/federation-manager-architecture.png)
-
-
 
 ---
 
@@ -91,14 +97,14 @@ The implementation contains a separate reconciler for each main federation resou
 ```text
 EWBI Operator
 ├── FederationReconciler
-├── AvailabilityZoneReconciler
-├── FileReconciler
+├── ZoneReconciler
+├── ImageReconciler
 ├── ArtefactReconciler
-├── ApplicationReconciler
-└── ApplicationInstanceReconciler
+├── ApplicationOnboardingReconciler
+└── ApplicationDeploymentReconciler
 ```
 
-Each controller is registered against its corresponding Custom Resource using the Kubernetes controller-runtime framework. For example, the Federation controller watches `Federation` resources and the ApplicationInstance controller watches `ApplicationInstance` resources.
+Each controller is registered against its corresponding Custom Resource using the Kubernetes controller-runtime framework. For example, the Federation controller watches `Federation` resources and the ApplicationDeployment controller watches `ApplicationDeployment` resources.
 
 ### Resource-specific controllers
 
@@ -124,19 +130,21 @@ It can subsequently submit the selected Availability Zone to the partner through
 
 For Host resources, the controller maintains the Host-side federation resource and its state.
 
-### AvailabilityZoneReconciler
+### ZoneReconciler
 
-The `AvailabilityZoneReconciler` manages `AvailabilityZone` resources.
+The `ZoneReconciler` manages `AvailabilityZone` resources.
 
-The current implementation retrieves the resource and updates its state to `READY`. The source does not currently show a more extensive Availability Zone reconciliation process.
+A newly created zone starts in the `NOT_AVAILABLE` state. The supported states are `AVAILABLE`, `NOT_AVAILABLE`, `LOCKED`, `FAILED` and `TEMPORARY_FAILURE`.
 
-### FileReconciler
+The reconciler handles zone creation and deletion, and synchronises zone status according to the configured federation mode. In K8S mode, the Guest can create the corresponding Host-side zone resource directly in the partner's Kubernetes environment, with status synchronised through resource updates. In REST mode, the API exposes the endpoint for accepting zones.
 
-The `FileReconciler` manages `File` resources.
+### ImageReconciler
 
-The controller associates the File with its parent federation using the federation context identifier.
+The `ImageReconciler` manages `Image` resources.
 
-On the Guest side, it converts the Kubernetes resource into the corresponding EWBI file-upload request and sends it to the partner API.
+The controller associates the Image with its parent federation using the federation context identifier.
+
+On the Guest side, it converts the Kubernetes resource into the corresponding EWBI image-upload request and sends it to the partner API.
 
 On the Host side, it maintains the Host-side resource and handles status propagation.
 
@@ -148,17 +156,17 @@ The Guest-side controller converts the Kubernetes resource into the correspondin
 
 The request can contain component information including images, number of instances, restart policy, exposed interfaces and compute-resource requirements.
 
-### ApplicationReconciler
+### ApplicationOnboardingReconciler
 
-The `ApplicationReconciler` manages `Application` resources.
+The `ApplicationOnboardingReconciler` manages `ApplicationOnboarding` resources.
 
 On the Guest side, it translates the Kubernetes resource into an application onboarding request containing application metadata, component references, QoS information and callback information before sending it to the partner API.
 
 The resulting state is reflected in the Kubernetes resource status.
 
-### ApplicationInstanceReconciler
+### ApplicationDeploymentReconciler
 
-The `ApplicationInstanceReconciler` manages `ApplicationInstance` resources.
+The `ApplicationDeploymentReconciler` manages `ApplicationDeployment` resources.
 
 On the Guest side, it converts the resource into an application installation request containing information such as:
 
@@ -171,28 +179,31 @@ On the Guest side, it converts the resource into an application installation req
 
 and sends the request to the partner API.
 
-On the Host side, the controller maintains the application-instance resource and processes status information that can be returned through the federation callback mechanism.
+On the Host side, the controller maintains the application-deployment resource and processes status information that can be returned through the federation callback mechanism.
 
 ### Guest and Host identification
 
-The implementation uses Kubernetes labels to associate resources with a federation context and identify their federation relationship.
+The implementation uses Kubernetes labels and resource fields to identify resources and associate them with a federation.
 
-Important labels include:
+The operator sets the following label:
 
 ```text
-opg.ewbi.katalis.com/federation-context-id
-opg.ewbi.katalis.com/federation-relation
 opg.ewbi.katalis.com/id
 ```
 
-The federation relation is represented as either:
+The federation relationship is stored in resource fields rather than labels:
 
-```text
-guest
-host
-```
+- For child resources (`Image`, `Artefact`, `ApplicationOnboarding`, `ApplicationDeployment` and `AvailabilityZone`), it is stored in `spec.relationType`.
+- For a `Federation` resource, it is stored in `spec.federationData.relationType`.
 
-These labels allow controllers to locate the appropriate federation and determine which side of the relationship they are processing.
+The relationship is represented by either `GUEST` or `HOST`.
+
+The federation context ID is also stored in resource fields rather than labels:
+
+- For child resources, it is stored in `spec.federationContextId`.
+- For a `Federation` resource, it is stored in `status.federationContextId`.
+
+These fields allow the controllers to determine the resource's federation relationship and associate resources with the appropriate federation context.
 
 ### Status and finalizers
 
@@ -200,7 +211,7 @@ The controllers use Kubernetes status fields to represent the state of federatio
 
 The implementation also uses Kubernetes finalizers when an external federation resource must be handled before the Kubernetes resource is fully removed.
 
-For example, the File, Artefact, Application and ApplicationInstance controllers add finalizers and perform the corresponding external deletion operation before removing the finalizer.
+For example, the Image, Artefact, ApplicationOnboarding and ApplicationDeployment controllers add finalizers and perform the corresponding external deletion operation before removing the finalizer.
 
 ## EWBI API
 
@@ -222,7 +233,7 @@ The API contains handlers for federation operations such as:
 * Availability Zone operations
 * Application onboarding
 * Artefact management
-* File management
+* Image management
 * Application instance installation and removal
 * Resource information retrieval
 
@@ -234,15 +245,15 @@ The metastore provides the translation between EWBI data models and Kubernetes C
 
 It is responsible for creating, retrieving and updating the Kubernetes representation of federation resources.
 
-For example, an incoming application onboarding request is converted into an `Application` resource and associated with the relevant federation context.
+For example, an incoming application onboarding request is converted into an `ApplicationOnboarding` resource and associated with the relevant federation context.
 
-The same pattern is used for files, artefacts and application instances.
+The same pattern is used for images, artefacts and application deployments.
 
 ### Deployment layer
 
 The API contains a deployment abstraction for application-instance operations.
 
-The `Install` operation creates an `ApplicationInstance` Custom Resource through the metastore rather than directly deploying a workload.
+The `Install` operation creates an `ApplicationDeployment` Custom Resource through the metastore rather than directly deploying a workload.
 
 This keeps the federation API independent of the specific mechanism used by an operator to execute workloads.
 
@@ -250,7 +261,7 @@ This keeps the federation API independent of the specific mechanism used by an o
 
 The API provides callback endpoints for receiving asynchronous status information.
 
-For example, application and application-instance callbacks update the corresponding Kubernetes resource through the metastore.
+For example, application onboarding and application deployment callbacks update the corresponding Kubernetes resource through the metastore.
 
 The callback mechanism therefore allows externally generated federation status to be reflected in the local Kubernetes resources.
 
@@ -271,47 +282,41 @@ The broader security model and required trust mechanisms are documented separate
 The federation Custom Resource definitions are located under:
 
 ```text
-api/v1beta1/
+api/operator/v1beta1/
 ```
 
 The current resource types are:
 
-| Resource             | Kubernetes type       |
-| -------------------- | --------------------- |
-| Federation           | `Federation`          |
-| Availability Zone    | `AvailabilityZone`    |
-| File                 | `File`                |
-| Artefact             | `Artefact`            |
-| Application          | `Application`         |
-| Application Instance | `ApplicationInstance` |
+| Resource               | Kubernetes type         |
+| ---------------------- | ----------------------- |
+| Federation             | `Federation`            |
+| Availability Zone      | `Zone`                  |
+| Image                  | `Image`                 |
+| Artefact               | `Artefact`              |
+| Application Onboarding | `ApplicationOnboarding` |
+| Application Deployment | `ApplicationDeployment` |
 
 Each resource follows the Kubernetes `spec` / `status` model.
 
 The `spec` contains the resource information used by the federation implementation, while `status` represents the observed state.
 
-For example, `Application` contains application metadata, component references, QoS information and callback information, while its status represents the application's state.
+For example, `ApplicationOnboarding` contains application metadata, component references, QoS information and callback information, while its status represents the application onboarding's state.
 
-`ApplicationInstance` contains application, version and zone information in its specification, while its status contains state, conditions, access-point information and the application-instance identifier.
+`ApplicationDeployment` contains application, version and zone information in its specification, while its status contains state, conditions, access-point information and the application-deployment identifier.
 
 ## Federation Context and Labels
 
-Federation resources are associated with a Federation Context using Kubernetes labels.
+Federation resources are associated with a federation context through fields in their Kubernetes resource specifications and status, rather than through dedicated federation-context or federation-relation labels.
 
-The implementation defines labels for:
+The operator sets the `opg.ewbi.katalis.com/id` label. The federation relationship (`GUEST` or `HOST`) and federation context ID are stored in the resource fields described in [Guest and Host identification](#guest-and-host-identification).
 
-* Federation Context ID
-* External resource ID
-* Federation relationship
-
-The federation relationship identifies resources as either Guest or Host resources.
-
-These labels are used by the controllers and metastore when locating resources associated with a particular federation.
+The controllers and metastore use this information to identify the federation associated with a resource.
 
 ## Host-side Resource Creation
 
 One of the key implementation boundaries is the conversion of incoming EWBI requests into Host-side Kubernetes resources.
 
-For example, an incoming application installation request is converted into an `ApplicationInstance` resource containing:
+For example, an incoming application installation request is converted into an `ApplicationDeployment` resource containing:
 
 * Application provider
 * Application ID
@@ -320,7 +325,7 @@ For example, an incoming application installation request is converted into an `
 * Resource information
 * Callback information
 
-The generated resource is labelled with the federation context and Host relationship.
+The generated resource stores the federation context ID and Host relationship in its resource fields.
 
 The resulting Kubernetes resource can then be consumed by other components of the Host platform.
 
@@ -354,7 +359,7 @@ The federation platform provides the resource representation and federation coor
 
 ## Interface with the Federation Platform
 
-For application installation, the Host EWBI API creates an `ApplicationInstance` Custom Resource rather than directly executing the workload.
+For application installation, the Host EWBI API creates an `ApplicationDeployment` Custom Resource rather than directly executing the workload.
 
 The resource contains information such as:
 
@@ -406,6 +411,6 @@ The detailed sequence of operations, state transitions and callbacks is document
 
 * [Quick Start Guide](Quick-start-introduction.md) — Introduction to the platform and its key concepts.
 * [Architecture](architecture.md) — Describes the high-level architecture of the EWBI Federation Platform
-* [Core Components](components.md) — Detailed responsibilities and implementation of the platform components.
 * [Federation Model and Workflows](federation.md) — Detailed federation behaviour and resource workflows.
 * [Security](security.md) — Security model and trust boundaries.
+* [Deployment](deployment.md) — Setup and deployment of the federation manager

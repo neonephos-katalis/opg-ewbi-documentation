@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This documentation describes the EWBI Federation Platform and provides an introduction to how it enables independent [operator platforms](https://www.gsma.com/solutions-and-impact/technologies/networks/gsma_resources/opg-02-requirements-and-architecture/) to cooperate.
+This documentation describes the EWBI Federation Platform and provides an introduction to how it enables independent [operator platforms or OPs](https://www.gsma.com/solutions-and-impact/technologies/networks/gsma_resources/opg-02-requirements-and-architecture/) to cooperate.
 
 The platform provides an implementation of the **GSMA East-Westbound Interface (EWBI)**, enabling operators to establish federation relationships and exchange information about edge resources and application workloads.
 
@@ -28,12 +28,10 @@ The EWBI Federation Platform aims to enable a federation model in which one oper
 
 This represents the type of federation that the Katalis platform currently aims to support.
 
-> 💡 **Quick tip:** For clarity, this "operator" is not a network operator, but rather it refers to the [Kubernetes operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
-
 A typical federation therefore involves two roles:
 
-* A **Guest Operator**, which consumes capabilities from a partner.
-* A **Host Operator**, which provides capabilities and hosts workloads for a partner.
+* A **Guest Operator**, the OP which initiates federation towards the other OP, also referred to as the **Originating** OP within [GSMA EWBI documentation](https://www.gsma.com/solutions-and-impact/technologies/networks/gsma_resources/opg-04-east-westbound-interface-apis/).
+* A **Host Operator**, the OP which offers its Edge Cloud capabilities for consumption, also referred to as the **Partner** OP within [GSMA EWBI documentation](https://www.gsma.com/solutions-and-impact/technologies/networks/gsma_resources/opg-04-east-westbound-interface-apis/).
 
 The operators remain administratively independent while using agreed interfaces to exchange the information required to cooperate.
 
@@ -56,6 +54,24 @@ The EWBI APIs provide a standardised way for participating operators to exchange
 The EWBI Federation Platform implements these interfaces so that operators can participate in federation without needing to expose the internal implementation of their own platform.
 
 The detailed implementation of the EWBI interfaces is described in [Core Components](components.md).
+
+---
+
+## Which resources are exchanged?
+
+Katalis aims to provide the basic mechanisms for different organizations to negotiate, offer and acquire any type of resource, such as VMs, Kubernetes clusters, slices of a Kubernetes cluster, applications, and more.
+
+While this is the long-term goal, the current implementation supports Kubernetes-ready applications (Helm charts, manifests, Kubernetes-deployable packages) running on a partner operator's edge infrastructure, leveraging the following high-level workflow:
+
+* The partner OP (host) offers availability zones. Each zone is an edge location and discloses:
+  * its geographic position and coverage;
+  * the compute capacity available (CPU, memory, storage, GPUs, flavours, network and latency/throughput targets).
+* The originating OP (guest) subscribes to zones and asks for its applications to run there. It goes through the following GSMA flow: Image -> Artefact -> ApplicationOnboarding -> ApplicationDeployment.
+
+VMs and Kubernetes clusters (or cluster slices) are not supported as resources you can acquire, but may be introduced in the future with either Kubernetes plugins or other ad-hoc mechanisms.
+
+Katalis itself does not deploy anything. It acts as a federation bridge: handling the GSMA EWBI exchange between the two operators and turns each request (from image up to application deployment) into Kubernetes resources on the partner OP's side.
+A separate orchestrator on the host side must watch those resources and do the actual work on its infrastructure.
 
 ---
 
@@ -102,6 +118,8 @@ The EWBI Operator provides the Kubernetes-native interface to federation.
 It manages federation resources within Kubernetes and connects those resources to federation operations.
 
 The detailed implementation of the Operator is described in [Core Components](components.md).
+
+> 💡 **Quick tip:** For clarity, this "operator" is not a network operator, but rather it refers to the [Kubernetes operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
 
 ### EWBI API
 
@@ -169,11 +187,11 @@ A **Federation Context** identifies a specific federation relationship between t
 
 The Federation Context identifier is associated with subsequent federation operations so that resources and requests can be linked to the appropriate federation relationship.
 
-### File
+### Image
 
-A **File** represents an application image or other deployable file that can be made available to a federation partner.
+An **Image** represents an application image or other deployable file that can be made available to a federation partner.
 
-Files provide the deployable content required by an application.
+Images provide the deployable content required by an application.
 
 ### Artefact
 
@@ -181,15 +199,15 @@ An **Artefact** describes information required to deploy a workload.
 
 It can contain information such as workload components, images, resource requirements and deployment-related parameters.
 
-### Application
+### Application Onboarding
 
-An **Application** represents a logical application that is onboarded into the federation.
+An **Application Onboarding** represents a logical application that is onboarded into the federation.
 
 An application can reference the artefacts required to deploy its workload and contain application metadata and relevant requirements.
 
-### Application Instance
+### Application Deployment
 
-An **Application Instance** represents a requested instance of an application running within a particular Availability Zone.
+An **Application Deployment** represents a requested instance of an application running within a particular Availability Zone.
 
 It connects an application to a specific deployment location and contains information required for that deployment.
 
@@ -201,8 +219,10 @@ The relationships and lifecycle of these resources are described in more detail 
 
 Once the basic concepts are understood, the remaining documentation can be read according to what you need to understand or do:
 
-* [Quick Start Guide](Quick-start-introduction.md) — Introduction to the platform and its key concepts.
+## Related Documentation
+
 * [Architecture](architecture.md) — Describes the high-level architecture of the EWBI Federation Platform
 * [Core Components](components.md) — Detailed responsibilities and implementation of the platform components.
 * [Federation Model and Workflows](federation.md) — Detailed federation behaviour and resource workflows.
 * [Security](security.md) — Security model and trust boundaries.
+* [Deployment](deployment.md) — Setup and deployment of the federation manager
