@@ -63,15 +63,14 @@ Katalis aims to provide the basic mechanisms for different organizations to nego
 
 While this is the long-term goal, the current implementation supports Kubernetes-ready applications (Helm charts, manifests, Kubernetes-deployable packages) running on a partner operator's edge infrastructure, leveraging the following high-level workflow:
 
-* The partner op (host) offers availability zones. Each zone is an edge location and discloses:
+* The partner OP (host) offers availability zones. Each zone is an edge location and discloses:
   * its geographic position and coverage;
   * the compute capacity available (CPU, memory, storage, GPUs, flavours, network and latency/throughput targets).
-* The originating op (guest) subscribes to zones and asks for its applications to run there. It goes through the following GSMA flow: image -> artefact -> application onboarding -> application deployment.
+* The originating OP (guest) subscribes to zones and asks for its applications to run there. It goes through the following GSMA flow: Image -> Artefact -> ApplicationOnboarding -> ApplicationDeployment.
 
 VMs and Kubernetes clusters (or cluster slices) are not supported as resources you can acquire, but may be introduced in the future with either Kubernetes plugins or other ad-hoc mechanisms.
 
-Katalis itself does not deploy anything.
-It acts as federation bridge: it handles the GSMA EWBI exchange between the two operators and turns each request (from image up to application deployment) into Kubernetes resources on the partner op (host) operator's side.
+Katalis itself does not deploy anything. It acts as a federation bridge: handling the GSMA EWBI exchange between the two operators and turns each request (from image up to application deployment) into Kubernetes resources on the partner OP's side.
 A separate orchestrator on the host side must watch those resources and do the actual work on its infrastructure.
 
 ---
