@@ -21,10 +21,10 @@ The guide also includes a reference section describing the project structure.
 
 ### Prerequisites
 
-- go version v1.22.0+
+- go version v1.25.0+
 - docker version 17.03+.
 - kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- Access to a Kubernetes v1.30+ cluster.
 
 For local end-to-end testing using Kind, see [docs/manual-testing-kind.md](docs/manual-testing-kind.md) (full Guest ↔ Host flow) and [docs/manual-callbacks-testing-kind.md](docs/manual-callbacks-testing-kind.md) (Host → Guest callback flow).
 
@@ -44,17 +44,47 @@ This code is designed to run on both ARM64 and AMD64 platforms, but to enable th
 2. For the **Makefile** in OPG-EWBI-OPERATOR, you need to change lines 1-2 as follows:
 
     **For Linux/ARM64**:
-    - Line 1: ```IMG ?= ghcr.io/neonephos-katalis/opg-ewbi-operator:neonephos```
-    - Line 2: ```PLATFORM ?= linux/arm64```
+    - Line 2: ```IMG ?= ghcr.io/neonephos-katalis/opg-ewbi-operator:neonephos```
+    - Line 5: ```PLATFORM ?= linux/arm64```
 
     **For Linux/AMD64**:
-    - Line 1: ```IMG ?= ghcr.io/neonephos-katalis/opg-ewbi-operator-amd:neonephos```
-    - Line 2: ```PLATFORM ?= linux/amd64```
+    - Line 2: ```IMG ?= ghcr.io/neonephos-katalis/opg-ewbi-operator-amd:neonephos```
+    - Line 5: ```PLATFORM ?= linux/amd64```
+
+### Configuration: namespaced or cluster-wide
+
+By default, the operator is namespaced: it watches only the namespace where it is installed, and the API creates all resources in that same namespace.
+
+The operator can also run cluster-wide, watching all namespaces. The mode is chosen at installation time using the Helm chart's `clusterWide` value (`false` by default):
+
+```bash
+helm install federation dist/chart -n <namespace> --create-namespace --set clusterWide=true
+```
+
+With `clusterWide: true`, the chart installs a `ClusterRole` and `ClusterRoleBinding` instead of a `Role` and `RoleBinding`, and sets the `CONTROLLER_CLUSTER_WIDE` (operator) and `API_CLUSTER_WIDE` (API) environment variables to `true`.
+
+The mode of an existing release can be switched with:
+
+```bash
+helm upgrade federation dist/chart -n <namespace> --set clusterWide=<true|false>
+```
+
+In cluster-wide mode:
+
+- **Kubernetes technology:** Resources are created on the Host in the namespace specified by `spec.federationData.k8sOptions.namespace`. This no longer needs to be the namespace where the Host operator is installed.
+- **REST technology:** When a federation is created, the API creates (or reuses) a namespace named `fedrest-<id>`. The `<id>` consists of 12 base36 characters derived from the federation ID and country code. All resources belonging to that federation are created in this namespace.
+
+**Important:** A cluster-wide operator reconciles resources across every namespace, including those belonging to other releases, and writes cluster-scoped validation policies.
+
+- Install at most one cluster-wide release per Kubernetes cluster.
+- Do not combine cluster-wide and namespaced releases in the same cluster.
+- To test Host and Guest in cluster-wide mode, use two separate clusters.
+- To run multiple releases in one cluster, use namespaced mode.
 
 ## Deploy the federation manager
 Install operator in host namespace, set API nodeport and set CRD to true to also install CRDs NodePorts are exposed in case testing outside of the cluster is needed.
 
-**⚠️ Currently, the files are set for Linux/arm64 platforms. If you need to build images for Linux/amd64 platforms, follow the previously described steps (Configuration: platform ARM64 or platform AMD64)**
+**Note:** The default build platform in the operator Makefile is `linux/amd64`. If you are building images for a different architecture, configure the `PLATFORM` variable accordingly, as described in the platform configuration section.
 
 1. Create a `.netrc` file in your home directory (`~/.netrc` on macOS/Linux) with the following format:
 
@@ -74,28 +104,28 @@ Install operator in host namespace, set API nodeport and set CRD to true to also
   Build the **operator** image:
   ```make docker-build-controller```
       **or**
-  ```docker build . --no-cache -t ghcr.io/neonephos-katalis/opg-ewbi-operator:neonephos --secret id=netrc,src=$HOME/.netrc .```
+  ```docker build --no-cache -t ghcr.io/neonephos-katalis/katalis/fm-operator:neonephos --secret id=netrc,src=$HOME/.netrc .```
 
   **For debugging purposes**, you can build a debug image with bash and troubleshooting tools (curl, wget, tcpdump, dig, etc.):
   ```make docker-build-debug```
       **or**
-  ```docker build --target debug --no-cache -t ghcr.io/neonephos-katalis/opg-ewbi-operator:neonephos-debug --secret id=netrc,src=$HOME/.netrc .```
+  ```docker build --target debug --no-cache -t ghcr.io/neonephos-katalis/katalis/fm-operator:neonephos-debug --secret id=netrc,src=$HOME/.netrc .```
 
-  To use the debug image, install the chart with `--set image.tag=neonephos-debug` and exec into the pod with `kubectl exec -it <pod-name> -- bash`
+  To use the debug image, install the chart with `--set manager.image.tag=neonephos-debug` and exec into the pod with `kubectl exec -it <pod-name> -- bash`
 
 4. Build the **API** image:
 
   ```make docker-build-api```
       **or**
-  ```docker build -f Dockerfile.api --no-cache -t ghcr.io/neonephos-katalis/opg-ewbi-api:neonephos --secret id=netrc,src=$HOME/.netrc .```
+  ```docker build -f Dockerfile.api --no-cache -t ghcr.io/neonephos-katalis/katalis/fm-api:neonephos --secret id=netrc,src=$HOME/.netrc .```
 
 5. ```docker login ghcr.io```
 6. In your cluster create a new namespace (e.g. ```kubectl create ns federation```) after this exec this command. (replace $username and $accessToken with your username and accessToken used for the docker login ghcr.io command)
   ```bash
       kubectl -n federation create secret docker-registry opg-registry-secret \
       --docker-server=ghcr.io \
-      --docker-username= $username \
-      --docker-password= $accessToken
+      --docker-username=$username \
+      --docker-password=$accessToken
   ```
 7. In the end exec this command (in the **project root folder** via terminal)
 
@@ -104,11 +134,14 @@ Install operator in host namespace, set API nodeport and set CRD to true to also
     ```bash
     helm install federation-manager dist/chart -n federation \
     --set federation.services.federation.nodePort=30080 \
-    --set crd.enable=true
+    --set crd.enabled=true
     ```
 
     After this command the OPG-EWBI-CONTROLLER and OPG-EWBI-API, if everything goes well, they will be available.
-By running the command kubectl get pods -A, you should see two pods running in the federation namespace with names like nearbyone-federation-api-XXX and opg-ewbi-operator-controller-manager-XXX.
+By running `kubectl get pods -A`, you should see two pods running in the federation namespace with names similar to:
+
+- `katalis-fm-controller-manager-...`
+- `katalis-fm-fm-api-...`
 
 Use the following commands only if we you want to push the latest version of the controller and the api in github pacakge
 
@@ -136,13 +169,14 @@ docker push ghcr.io/neonephos-katalis/opg-ewbi-operator-amd64:v1.0.0
 docker push ghcr.io/neonephos-katalis/opg-ewbi-api-amd64:v1.0.0
 ```
 
-The Nearby code is written to work in both role (HOST and GUEST).
-If you want test in local, you need two helm installation one for the host and one for the guest, use the following configuration of the helm command, but don't forget to follow the step 8 for both namespaces (katalis-dev-host and katalis-dev-guest)
+The code is written to work in both roles (HOST and GUEST).
+
+If you want to test locally, you need two Helm installations: one for the Host and one for the Guest. Use the Helm command configurations below for the respective namespaces (`katalis-dev-host` and `katalis-dev-guest`), making sure to apply the required configuration for both namespaces.
 
 ```bash
 helm install federationhost dist/chart -n katalis-dev-host \
   --set federation.services.federation.nodePort=30080 \
-  --set crd.enable=true
+  --set crd.enabled=true
 ```
 
 We set crd to false since we have already installed them
@@ -150,56 +184,64 @@ We set crd to false since we have already installed them
 ```bash
 helm install federationguest dist/chart -n katalis-dev-guest \
 --set federation.services.federation.nodePort=30081 \
---set crd.enable=false
+--set crd.enabled=false
 ```
 **Choose the names you prefer for namespaces and helm; those listed here are provided as examples.**
 
 ### Test:
 
+**Note:** This section describes testing using the REST-based sample resources in `config/samples/rest/`. The Kubernetes-mode samples in `config/samples/k8s/` will be documented in a future issue. 
+
 **Note:** You can launch the end-to-end federation test from GitHub Actions locally using [act](https://github.com/nektos/act). Make sure to stop any local Kind cluster before starting the test.
 
-**Note:** You can launch the e2e federation test from github actions locally using [act](https://github.com/nektos/act). Make sure to stop any local kind cluster before starting the test.
+#### Establish the federation
 
-Create Client ID in identity provider and store in a federation on the host. This is not yet the establishment of the federation: This is done to link the federation to the clientID.
+The Guest initiates federation with the Host by creating a `Federation` resource. The Host Federation is automatically created by the Host API when it receives the `POST /partner` request.
 
-It is named ..Auth because it represents identity provider integration and representation in the cluster.
+Apply the Federation resource in the Guest namespace:
 
 ```bash
-kubectl apply -f config/samples/federationHostAuth.yaml
+kubectl apply -f config/samples/rest/federation.yaml
 ```
 
-Federation establishment: ON GUEST
-```bash
-kubectl apply -f config/samples/federationGuest.yaml
-```
-
-In federationGuest, you will see we define the URL of the EWBI API of the host.
+In federation.yaml, you will see that we define the URL of the Host's EWBI API, as well as the callback URL for the Guest API.
 
 Example:
-http://nearbyone-federation-api.katalis-dev-host.svc.cluster.local:8080
-(and the callback url. Bear in mind the callback flow is not complete)
 
-You should see in the federation status the FederationContextId. Copy it and use this for the next CRs.
-(FederationContextId uuid is currently generated from ClientID, so if you don't change the examples, they should work without modifying)
+Host API (tokenUrl): http://katalis-fm-api.host.svc.cluster.local:8080
+Guest callback URL (partnerStatusLink): http://katalis-fm-api.guest.svc.cluster.local:8080
+The Host uses the callback URL to send partner status updates back to the Guest.
 
-```bash
-kubectl apply -f config/samples/fileGuest.yaml
-kubectl apply -f config/samples/artefactGuest.yaml
-kubectl apply -f config/samples/appGuest.yaml
-kubectl apply -f config/samples/appInstGuest.yaml
-```
+You should see the `FederationContextId` in the Federation status. Copy it and use it for the subsequent CRs.
 
-You will see that, for each specific CR created in the guest, a new one is mirrored in the host, all happenning through the EWBI API.
-Same will happen if you remove them, even federation.
+#### Deploy resources through the federation
 
-If you delete guest ones, mirrored host resources will get deleted.
+Once the federation has been established, apply the following sample resources in order:
 
 ```bash
-kubectl delete -f config/samples/fileGuest.yaml
-kubectl delete -f config/samples/artefactGuest.yaml
-kubectl delete -f config/samples/appGuest.yaml
-kubectl delete -f config/samples/appInstGuest.yaml
+kubectl apply -f config/samples/rest/zone.yaml
+kubectl apply -f config/samples/rest/image.yaml
+kubectl apply -f config/samples/rest/artefact.yaml
+kubectl apply -f config/samples/rest/appOnboard.yaml
+kubectl apply -f config/samples/rest/appDeploy.yaml
 ```
+
+These resources are created in the Guest and propagated to the Host through the EWBI API.
+
+#### Delete the sample resources
+
+To remove the resources, delete them in reverse order:
+
+```bash
+kubectl delete -f config/samples/rest/appDeploy.yaml
+kubectl delete -f config/samples/rest/appOnboard.yaml
+kubectl delete -f config/samples/rest/artefact.yaml
+kubectl delete -f config/samples/rest/image.yaml
+kubectl delete -f config/samples/rest/zone.yaml
+kubectl delete -f config/samples/rest/federation.yaml
+```
+
+
 ## Regenerate API Code
 
 To regenerate Go client/server code after OpenAPI specification changes:
@@ -208,7 +250,7 @@ To regenerate Go client/server code after OpenAPI specification changes:
 make apigen
 ```
 
-This generates code from `api/ewbi/FederationApi_v1.3.0.yaml` into:
+This generates code from `api/ewbi/swagger.yaml` into:
 - `api/ewbi/client/` — Generated client code
 - `api/ewbi/server/` — Generated server code
 - `api/ewbi/models/` — Generated model definitions
@@ -218,8 +260,9 @@ This generates code from `api/ewbi/FederationApi_v1.3.0.yaml` into:
 ```
 .
 ├── api/
-│   ├── ewbi/                          # EWBI Federation API (generated + specs)
-│   │   ├── FederationApi_v1.3.0.yaml  # OpenAPI specification
+│   ├── ewbi/                          # EWBI Federation API specifications and generated code
+│   │   ├── Federation_API_v1.4.0.yaml # EWBI 1.4.0 OpenAPI specification
+│   │   ├── swagger.yaml               # Modified EWBI 1.4.0 specification used for code generation
 │   │   ├── apigen.sh                  # Code generation script
 │   │   ├── client/                    # Generated client code
 │   │   ├── server/                    # Generated server code
@@ -234,6 +277,8 @@ This generates code from `api/ewbi/FederationApi_v1.3.0.yaml` into:
 │   ├── config/                        # API server configuration
 │   ├── controller/                    # Reconcilers
 │   ├── indexer/                       # Field indexers
+│   ├── k8s/                           # Kubernetes resource implementations
+│   ├── rest/                          # REST API resource implementations
 │   ├── multipart/                     # Multipart form helpers
 │   ├── opg/                           # OPG client cache
 │   └── options/                       # Namespace config
@@ -242,6 +287,9 @@ This generates code from `api/ewbi/FederationApi_v1.3.0.yaml` into:
 │   ├── metastore/                     # K8s-backed persistence
 │   ├── deployment/                    # Install/uninstall logic
 │   └── ...
+├── test/
+│   ├── e2e/                           # End-to-end tests for federation resources
+│   └── mock/                          # Mock implementations used in testing
 ├── config/                            # Kustomize manifests
 ├── dist/chart/                        # Helm chart
 ├── Dockerfile                         # Operator image
