@@ -38,6 +38,14 @@ The documentation covers the platform architecture, implementation, federation b
 - **[Manual Federation Testing with Kind](docs/testing/manual-testing-kind.md)** — local end-to-end federation testing.
 - **[Manual Callback Testing with Kind](docs/testing/manual-callbacks-testing-kind.md)** — local testing of the callback flow.
 
+## Community Materials
+
+The [`community-materials/`](community-materials/) directory serves as a knowledge archive for the community. It helps members find presentations, documents, demonstrations, meeting resources and other content shared during the weekly sessions.
+
+Materials are organised using the filename format `YYYY_MM_DD_<descriptive-name>.<extension>`, with the date followed by a concise name for the content. 
+
+For large files or content hosted externally, add a Markdown file in `community-materials/` containing the relevant links and enough context to identify and understand the material.
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
