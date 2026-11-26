@@ -1,3 +1,5 @@
+This guide covers testing callback propagation from the Host OP to the Guest OP within the REST-based federation communication model. It complements the manual testing guide, which demonstrates Guest-to-Host interaction through the EWBI REST API.
+
 # Manual Testing on Kind (Full Guest ↔ Host Flow)
 
 End-to-end guide for testing the complete federation flow on a single Kind cluster with two namespaces simulating a Guest OP and a Host OP.
@@ -7,20 +9,20 @@ End-to-end guide for testing the complete federation flow on a single Kind clust
 ```
 kind-federation cluster
 ├── namespace: katalis-dev-host    ← simulates the Host OP
-│   ├── operator pod            ← reconciles host-mode CRs (marks them Ready)
-│   ├── federation-api pod      ← receives inbound EWBI HTTP calls
-│   ├── Federation CR           ← pre-provisioned (empty initialDate, origin-client-id label)
+│   ├── operator pod               ← reconciles host-mode CRs (marks them Ready)
+│   ├── federation-api pod         ← receives inbound EWBI HTTP calls
+│   ├── Federation CR              ← created automatically by the Host API on POST /partner
 │
 └── namespace: katalis-dev-guest   ← simulates the Guest OP
-    ├── operator pod            ← reconciles guest-mode CRs (makes outbound calls to host API)
-    └── [federation-api pod]    ← optional: only needed to receive host→guest callbacks
+    ├── operator pod               ← reconciles guest-mode CRs (makes outbound calls to host API)
+    └── [federation-api pod]       ← optional: only needed to receive host→guest callbacks
 ```
 
 **Flow initiated by the guest operator:**
 1. Admin creates a `Federation` CR in `katalis-dev-guest` with `federation-relation=guest`
-2. Guest operator calls `POST /federation` on the host API → host CR updated → returns `federationContextId` + 1 AZ
-3. Guest operator calls `ZoneSubscribe` automatically on next reconcile
-4. Admin creates `File`, `Artefact`, `Application`, `ApplicationInstance` CRs in `katalis-dev-guest`
+2. Guest operator calls `POST /partner` on the host API → host CR updated → returns `federationContextId` + 1 AZ
+3. Guest selects the Availability Zones offered by the Host.
+4. Admin creates `Image`, `Artefact`, `ApplicationOnboarding`, `ApplicationDeployment` CRs in `katalis-dev-guest`
 5. Guest operator calls the corresponding host API endpoints for each CR
 6. Host operator reconciles each host-mode CR and marks it `Ready`
 
@@ -59,14 +61,14 @@ kind load docker-image opg-ewbi-api:dev --name federation
 ```sh
 helm upgrade --install federation-host dist/chart \
   --namespace katalis-dev-host --create-namespace \
-  --set controllerManager.container.image.repository=opg-ewbi-operator \
-  --set controllerManager.container.image.tag=dev \
-  --set controllerManager.container.image.pullPolicy=Never \
+  --set manager.container.image.repository=opg-ewbi-operator \
+  --set manager.container.image.tag=dev \
+  --set manager.container.image.pullPolicy=Never \
   --set federation.image.repository=opg-ewbi-api \
   --set federation.image.tag=dev \
   --set federation.image.pullPolicy=Never \
   --set crd.enable=true \
-  --set controllerManager.container.opgInsecureSkipVerify=true
+  --set manager.container.opgInsecureSkipVerify=true
 
 kubectl -n katalis-dev-host get pods
 ```
@@ -80,47 +82,30 @@ The guest only needs the operator (it makes outbound calls to the host API). Dep
 ```sh
 helm upgrade --install federation-guest dist/chart \
   --namespace katalis-dev-guest --create-namespace \
-  --set controllerManager.container.image.repository=opg-ewbi-operator \
-  --set controllerManager.container.image.tag=dev \
-  --set controllerManager.container.image.pullPolicy=Never \
+  --set manager.container.image.repository=opg-ewbi-operator \
+  --set manager.container.image.tag=dev \
+  --set manager.container.image.pullPolicy=Never \
   --set federation.image.repository=opg-ewbi-api \
   --set federation.image.tag=dev \
   --set federation.image.pullPolicy=Never \
   --set crd.enable=false \
-  --set controllerManager.container.opgInsecureSkipVerify=true
+  --set manager.container.opgInsecureSkipVerify=true
 
 kubectl -n katalis-dev-guest get pods
 ```
 
-## 4. Pre-Provision Host Resources
+## 4. Create the Guest Federation CR
 
-The host API's `CreateFederation` handler **does not create** a new Federation CR — it **looks up an existing one** by matching label `opg.ewbi.nby.one/origin-client-id` against the incoming `X-Client-ID` header. A cluster admin must pre-provision it.
+This CR triggers the guest operator to call `POST /partner` on the host API.
 
-> **Important:** The host Federation CR must offer **at least 1** AvailabilityZone in `spec.offeredAvailabilityZones`. The guest operator's `handleAcceptExternalAZ` picks `offeredAvailabilityZones[0]` and calls `ZoneSubscribe` with it. With 0 offered zones the subscription is skipped.
-
-Apply the pre-provisioned host Federation CR (the sample already sets `namespace: katalis-dev-host`):
-
-```sh
-kubectl apply -f config/samples/federationHostAuth.yaml
-```
-
-> **Note:** You do **not** need to create a matching `AvailabilityZone` CR. The value in `spec.offeredAvailabilityZones` is just a string ID — `CreateFederation` and `ZoneSubscribe` both read it directly from the Federation CR spec without doing any CR lookup. An `AvailabilityZone` CR is only needed if you later call `GET /{fcid}/zones/{zoneId}` (`GetZoneData`), which is not part of this flow.
-
-The sample sets `opg.ewbi.nby.one/origin-client-id: 3acde22c-d245-480d-b01e-24e38e01806d`. The guest Federation CR's `spec.guestPartnerCredentials.clientId` must match this value exactly.
-
-Note: the current implementation deterministically derives the `federationContextId` from the `clientId` (UUID V5). All sample YAML files already contain the resulting FederationContextId value `4d559f1b-f008-58c2-a2f8-0596892a0f7a` — if you use a different `clientId`, read the actual FCID from the guest Federation CR's `status.federationContextId` after establishment and update the sample files accordingly.
-
-## 5. Create the Guest Federation CR
-
-This CR triggers the guest operator to call `POST /federation` on the host API.
-
-Key fields in `config/samples/federationGuest.yaml`:
-- `spec.guestPartnerCredentials.tokenUrl` — the **base URL** of the host API (no path suffix). The generated client appends route paths automatically. The sample file already sets `http://nearbyone-federation-api.katalis-dev-host.svc.cluster.local:8080`, which is correct for this Kind setup.
-- `spec.guestPartnerCredentials.clientId` — sent as `X-Client-ID` header to the host; **must match** the `origin-client-id` label on the host's pre-provisioned Federation CR (`3acde22c-d245-480d-b01e-24e38e01806d`).
-- `metadata.labels["opg.ewbi.nby.one/id"]` — the `origOPFederationId` business ID sent in the request body.
+Key fields in `config/samples/rest/federation.yaml`:
+- `spec.federationData.restOptions.tokenUrl` — the **base URL** of the host API (no path suffix). The generated client appends route paths automatically. The sample file already sets `http://katalis-fm-api.katalis-dev-host.svc.cluster.local:8080`, which is correct for this Kind setup.
+- `spec.federationData.restOptions.partnerStatusLink` — callback URL used by the Host to send partner status updates to the Guest.
+- `spec.federationData.clientId` — sent as the `X-Client-ID` header to the Host API to identify the Guest OP.
+- `metadata.labels["opg.ewbi.katalis.com/id"]` — the `origOPFederationId` business ID sent in the request body.
 
 ```sh
-kubectl apply -f config/samples/federationGuest.yaml
+kubectl apply -f config/samples/rest/federation.yaml
 ```
 
 ### Verify Federation Establishment
@@ -128,12 +113,9 @@ kubectl apply -f config/samples/federationGuest.yaml
 ```sh
 # Guest operator calls the host API and updates the guest CR status
 kubectl -n katalis-dev-guest get federation fed-2dae064c-28cc-456e-8b0a-dd67bab7d8f7 -o yaml
-# Look for: status.federationContextId, status.state: AVAILABLE, status.offeredAvailabilityZones
+# Look for: status.federationContextId, status.state: AVAILABLE, status.zoneDetails
 
-# On next reconcile, guest operator calls ZoneSubscribe and updates spec
-# Look for: spec.acceptedAvailabilityZones
-
-# Host-side: the Federation CR should have been updated with initialDate, partner info and have opg.ewbi.nby.one/federation-context-id label that matches the guest CR's status.federationContextId
+# Host-side: the Federation CR should have been updated with initialDate, partner info and have opg.ewbi.katalis.com/federation-context-id label that matches the guest CR's status.federationContextId
 kubectl -n katalis-dev-host get federation fed-e35f69d8-ae5a-456b-9f95-d950e4c03e8d -o yaml
 ```
 
@@ -144,90 +126,87 @@ FCID=$(kubectl -n katalis-dev-guest get federation fed-2dae064c-28cc-456e-8b0a-d
 echo "FederationContextId: $FCID"
 ```
 
-## 6. Upload a File (Guest → Host)
+## 5. Upload an Image (Guest → Host)
 
-The sample file already contains the `federation-context-id` `4d559f1b-f008-58c2-a2f8-0596892a0f7a`:
+The sample image already contains the `federation-context-id` `4d559f1b-f008-58c2-a2f8-0596892a0f7a`:
 
 ```sh
-kubectl apply -f config/samples/fileGuest.yaml
+kubectl apply -f config/samples/rest/image.yaml
 
-# Guest operator calls POST /{fcid}/files on host API
-kubectl -n katalis-dev-guest get file file-2dae064c-28cc-456e-8b0a-dd67bab7d8f7 -o yaml
+# Guest operator calls POST /{fcid}/images on host API
+kubectl -n katalis-dev-guest get image image-2dae064c-28cc-456e-8b0a-dd67bab7d8f7 -o yaml
 # Verify: status.state = PENDING
-kubectl -n katalis-dev-host get files  # File CR should exist in host namespace
+kubectl -n katalis-dev-host get images  # Image CR should exist in host namespace
 ```
 
-## 7. Upload an Artefact (Guest → Host)
+## 6. Upload an Artefact (Guest → Host)
 
-The artefact sample references `file-2dae064c-28cc-456e-8b0a-dd67bab7d8f7` (the file from step 6):
+The artefact sample references `image-2dae064c-28cc-456e-8b0a-dd67bab7d8f7` (the image from step 5):
 
 ```sh
-kubectl apply -f config/samples/artefactGuest.yaml
+kubectl apply -f config/samples/rest/artefactGuest.yaml
 
 kubectl -n katalis-dev-guest get artefact artefact-2dae064c-28cc-456e-8b0a-dd67bab7d8f7 -o yaml
 # Verify: status.state = PENDING
 ```
 
-## 8. Onboard an Application (Guest → Host)
+## 7. Onboard an Application (Guest → Host)
 
-The application sample references `artefact-2dae064c-28cc-456e-8b0a-dd67bab7d8f7` (the artefact from step 7):
+The application onboarding sample references `artefact-2dae064c-28cc-456e-8b0a-dd67bab7d8f7` (the artefact from step 6):
 
 ```sh
-kubectl apply -f config/samples/appGuest.yaml
+kubectl apply -f config/samples/rest/appOnboard.yaml
 
-kubectl -n katalis-dev-guest get application app-2dae064c-28cc-456e-8b0a-dd67bab7d8f7 -o yaml
+kubectl -n katalis-dev-guest get applicationonboarding apponboard-2dae064c-28cc-456e-8b0a-dd67bab7d8f7 -o yaml
 # Verify: status.state = PENDING
 ```
 
-## 9. Deploy an Application Instance (Guest → Host)
+## 8. Deploy an Application Deployment (Guest → Host)
 
-The application instance sample references `app-2dae064c-28cc-456e-8b0a-dd67bab7d8f7` (the application from step 8) and zone `zone-es-madrid-001`:
+The application deployment sample references `apponboard-2dae064c-28cc-456e-8b0a-dd67bab7d8f7` (the application onboarding from step 7) and zone `zone-es-madrid-001`:
 
 ```sh
-kubectl apply -f config/samples/appInstGuest.yaml
+kubectl apply -f config/samples/rest/appDeploy.yaml
 
-kubectl -n katalis-dev-guest get applicationinstance app-inst-2dae064c-28cc-456e-8b0a-dd67bab7d8f7 -o yaml
+kubectl -n katalis-dev-guest get applicationdeployment appdeploy-2dae064c-28cc-456e-8b0a-dd67bab7d8f7 -o yaml
 # Verify: status.state = PENDING
 ```
 
-## 10. Verify the Full State
+## 9. Verify the Full State
 
 ```sh
 # Guest-side CRs (guest operator reconciled these, made outbound calls)
-kubectl -n katalis-dev-guest get federations,files,artefacts,applications,applicationinstances
+kubectl -n katalis-dev-guest get federations,images,artefacts,applicationonboardings,applicationdeployments
 
 # Host-side CRs (created by host API upon receiving guest operator's requests)
-kubectl -n katalis-dev-host get federations,files,artefacts,applications,applicationinstances
+kubectl -n katalis-dev-host get federations,images,artefacts,applicationonboardings,applicationdeployments
 
 # Host-side Federation should be AVAILABLE; child CRs should be PENDING
-kubectl -n katalis-dev-host get applications -o yaml | grep state
+kubectl -n katalis-dev-host get applicationonboardings -o yaml | grep state
 ```
 
-## 11. Optional: Test the Host API Directly via curl
+## 10. Optional: Test the Host API Directly via curl
 
 Port-forward to the host API to simulate raw API calls (bypassing the guest operator):
 
 ```sh
-kubectl -n katalis-dev-host port-forward svc/nearbyone-federation-api 8080:8080 &
+kubectl -n katalis-dev-host port-forward svc/katalis-fm-api 8080:8080 &
 ```
 
-Then use the curl examples from the previous host-only flow. The API base URL is `http://localhost:8080/operatorplatform/federation/v1`.
+Then use the curl examples from the previous host-only flow. The API base URL is `http://localhost:8080`.
 
-> The `X-Client-ID` header must match the `origin-client-id` label of the pre-provisioned host Federation CR.
-> Credentials validation is currently hardcoded to `skipCredentialsValidation=true` in `cmd/api/main.go`, so any value is accepted.
-
-## 12. Cleanup
+## 11. Cleanup
 
 ```sh
 # Delete all guest CRs (triggers guest operator's finalizer + deletion calls to host API)
-kubectl -n katalis-dev-guest delete applicationinstances,applications,artefacts,files,federations --all
+kubectl -n katalis-dev-guest delete applicationdeployments,applicationonboardings,artefacts,images,federations --all
 
 # Wait for guest cleanup to complete, then uninstall
 helm uninstall federation-guest -n katalis-dev-guest
 helm uninstall federation-host -n katalis-dev-host
 
 # Delete installed CRDs (not automatically removed by Helm because they are shared between guest and host)
-kubectl delete crd federations.opg.ewbi.nby.one files.opg.ewbi.nby.one artefacts.opg.ewbi.nby.one applications.opg.ewbi.nby.one applicationinstances.opg.ewbi.nby.one availabilityzones.opg.ewbi.nby.one
+kubectl delete crd federations.opg.ewbi.katalis.com images.opg.ewbi.katalis.com artefacts.opg.ewbi.katalis.com applicationonboardings.opg.ewbi.katalis.com applicationdeployments.opg.ewbi.katalis.com availabilityzones.opg.ewbi.katalis.com
 
 # Delete kind cluster
 kind delete cluster --name federation
@@ -241,12 +220,10 @@ To test the Host → Guest callback flow (patching host-side CRs and verifying p
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Guest Federation stuck in `NOT_AVAILABLE`, no outbound call | `spec.guestPartnerCredentials.tokenUrl` wrong or missing | Must be the host API base URL **without** any path suffix (e.g. `http://nearbyone-federation-api.katalis-dev-host.svc.cluster.local:8080`) — the client appends route paths automatically |
-| Host API returns 404 on `CreateFederation` | No pre-provisioned Federation CR with matching `origin-client-id` label | Create the host Federation CR (step 4) |
+| Guest Federation stuck in `NOT_AVAILABLE`, no outbound call | `spec.federationData.restOptions.tokenUrl` wrong or missing | Must be the host API base URL **without** any path suffix (e.g. `http://katalis-fm-api.katalis-dev-host.svc.cluster.local:8080`) — the client appends route paths automatically |
 | Host API returns 409 on `CreateFederation` | Host Federation already has `spec.initialDate` set (already established) | Delete and recreate the host Federation CR |
-| Guest `ZoneSubscribe` never called | Host offered 0 zones | Host's `spec.offeredAvailabilityZones` must have **at least 1** entry (the guest subscribes to the first) |
 | `federation-context-id` label mismatch on child CRs | Used wrong/placeholder FCID | Set label from `Federation.Status.FederationContextId` |
-| Child CRs return 500 `"application not found"` | Dependency not yet Ready on host | Check order: File → Artefact → Application → ApplicationInstance |
+| Child CRs return 500 `"application not found"` | Dependency not yet Ready on host | Check order: Image → Artefact → ApplicationOnboarding → ApplicationDeployment |
 | Pods in `CrashLoopBackOff` | Missing env vars or RBAC | Check `kubectl -n <ns> logs <pod>` |
 | Image pull errors in kind | Images not loaded | Re-run `kind load docker-image` and set `imagePullPolicy=Never` in helm values |
 | `ErrImagePull` / `exec format error` on Kind | Image built for wrong CPU architecture | On Apple Silicon, build with `PLATFORM=linux/arm64` (Makefile defaults to amd64) |
